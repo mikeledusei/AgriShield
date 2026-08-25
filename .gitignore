@@ -209,3 +209,4 @@ docker-compose.override.yml
 # Ignore only generated screenshots if they are too large.
 # Uncomment below if you want to exclude screenshots from Git.
 # docs/diagrams/screenshots/
+
