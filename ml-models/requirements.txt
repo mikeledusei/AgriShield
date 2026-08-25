@@ -1,0 +1,22 @@
+# ===== Data Manipulation =====
+pandas>=2.2.0
+numpy>=1.26.0
+
+# ===== Machine Learning =====
+scikit-learn>=1.4.0            # Logistic Regression, Random Forest, metrics
+xgboost>=2.0.0                 # Champion model
+joblib>=1.4.0                  # Save/load .joblib models
+
+# ===== Model Interpretability =====
+shap>=0.45.0                   # Feature importance (supports Chapter 4)
+
+# ===== Visualizations =====
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# ===== Notebooks =====
+jupyter>=1.0.0
+ipykernel>=6.29.0
+
+# ===== Utilities =====
+python-dotenv>=1.0.0           # Load environment variables

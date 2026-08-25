@@ -1,0 +1,17 @@
+# ===== Web Application =====
+streamlit>=1.35.0
+
+# ===== Backend Communication =====
+requests>=2.32.0               # Send requests to FastAPI backend
+
+# ===== Data Handling =====
+pandas>=2.2.0
+numpy>=1.26.0
+
+# ===== Visualizations =====
+plotly>=5.22.0                 # Dynamic charts
+folium>=0.16.0                 # Interactive maps
+streamlit-folium>=0.20.0       # Folium integration for Streamlit
+
+# ===== Utilities =====
+python-dotenv>=1.0.0           # Load backend API URL from .env

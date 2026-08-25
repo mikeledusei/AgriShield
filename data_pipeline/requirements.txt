@@ -1,0 +1,24 @@
+# ===== Data Manipulation =====
+pandas>=2.2.0
+numpy>=1.26.0
+openpyxl>=3.1.0                # Read/write Excel files
+
+# ===== Data Ingestion (APIs) =====
+requests>=2.32.0               # Open-Meteo, NASA POWER, FAOSTAT, KNBS
+
+# ===== Geospatial Data (HDX Kenya) =====
+geopandas>=0.14.0              # Handle county shapefiles and GeoJSON
+shapely>=2.0.0                 # Geometric operations
+fiona>=1.9.0                   # Read/write geospatial files
+
+# ===== Exploratory Data Analysis =====
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# ===== Notebooks =====
+jupyter>=1.0.0
+ipykernel>=6.29.0
+
+# ===== Utilities =====
+python-dotenv>=1.0.0           # Load API keys from .env
+tqdm>=4.66.0                   # Progress bars for long downloads
