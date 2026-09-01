@@ -210,3 +210,7 @@ docker-compose.override.yml
 # Uncomment below if you want to exclude screenshots from Git.
 # docs/diagrams/screenshots/
 
+venv/
+__pycache__/
+*.pyc
+.env

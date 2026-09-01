@@ -1,0 +1,39 @@
+# ----- Web Framework -----
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+pydantic>=2.9.0
+python-multipart>=0.0.12
+
+# ----- Machine Learning -----
+joblib>=1.4.0
+scikit-learn>=1.5.0
+xgboost>=2.1.0
+pandas>=2.2.0
+numpy>=1.26.0,<3.0.0
+
+# ----- Database (Neon PostgreSQL) -----
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9
+asyncpg>=0.28.0
+alembic>=1.12.0
+
+# ----- Redis  & Supabase -----
+redis>=5.0.0
+supabase
+
+# ----- Gria AI Agent (NVIDIA NIM) -----
+langchain-core>=1.4.7
+langchain-nvidia-ai-endpoints>=1.4.3
+langgraph>=0.2.0
+langchain-openai
+
+# ----- File Processing -----
+pdfplumber>=0.11.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
+Pillow>=10.4.0
+
+# ----- PDF & Utilities -----
+reportlab>=4.2.0
+python-dotenv>=1.0.0
+pydantic-settings>=2.0.0
