@@ -4,7 +4,7 @@ from streamlit_folium import st_folium
 import requests
 
 # Backend configuration
-BACKEND_URL = "http://127.0.0.1:8000"
+BACKEND_URL = "st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL", "https://agrishield-dnao.onrender.com")"
 
 st.set_page_config(page_title="County Risk Map", page_icon="🗺️", layout="wide")
 
