@@ -1,8 +1,12 @@
+import os
 import streamlit as st
 import requests
 
 # Set backend URL (Local URL for testing, replace with live Render URL later)
 BACKEND_URL = https://agrishield-dnao.onrender.com/
+# Dynamically fetch BACKEND_URL from Streamlit Cloud Secrets or Environment Variables
+BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
+API_KEY = st.secrets.get("API_KEY") or os.getenv("API_KEY", "")
 
 st.title("🌾 AgriShield: Agricultural Risk Intelligence")
 
@@ -17,9 +21,11 @@ sector = st.radio("Select Risk Area", ["Crops", "Livestock Forage"])
 if st.button("Generate Risk Prediction"):
     with st.spinner("Fetching predictions and Gria AI analysis..."):
         try:
-            # Send inputs to backend prediction endpoint
+            # Send inputs to backend prediction endpoint with security headers
             payload = {"county": selected_county, "sector": sector}
-            response = requests.post(f"{BACKEND_URL}/predictions/", json=payload)
+            headers = {"X-API-Key": API_KEY} if API_KEY else {}
+            
+            response = requests.post(f"{BACKEND_URL}/predictions/", json=payload, headers=headers)
             
             if response.status_code == 200:
                 data = response.json()
