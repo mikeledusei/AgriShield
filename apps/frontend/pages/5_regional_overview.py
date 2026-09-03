@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-BACKEND_URL = "http://127.0.0.1:8000"
+BACKEND_URL = https://agrishield-dnao.onrender.com/
 
 st.set_page_config(page_title="PDF Report Generator", page_icon="📄")
 

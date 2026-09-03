@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 
@@ -17,9 +18,11 @@ sector = st.radio("Select Risk Area", ["Crops", "Livestock Forage"])
 if st.button("Generate Risk Prediction"):
     with st.spinner("Fetching predictions and Gria AI analysis..."):
         try:
-            # Send inputs to backend prediction endpoint
+            # Send inputs to backend prediction endpoint with security headers
             payload = {"county": selected_county, "sector": sector}
-            response = requests.post(f"{BACKEND_URL}/predictions/", json=payload)
+            headers = {"X-API-Key": API_KEY} if API_KEY else {}
+            
+            response = requests.post(f"{BACKEND_URL}/predictions/", json=payload, headers=headers)
             
             if response.status_code == 200:
                 data = response.json()
