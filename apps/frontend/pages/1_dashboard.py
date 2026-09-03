@@ -2,6 +2,8 @@ import os
 import streamlit as st
 import requests
 
+# Set backend URL (Local URL for testing, replace with live Render URL later)
+BACKEND_URL = https://agrishield-dnao.onrender.com/
 # Dynamically fetch BACKEND_URL from Streamlit Cloud Secrets or Environment Variables
 BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 API_KEY = st.secrets.get("API_KEY") or os.getenv("API_KEY", "")
