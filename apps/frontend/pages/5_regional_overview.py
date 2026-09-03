@@ -1,8 +1,7 @@
 import streamlit as st
 import requests
 
-BACKEND_URL = https://agrishield-dnao.onrender.com/
-
+BACKEND_URL =https://agrishield-dnao.onrender.com/ 
 st.set_page_config(page_title="PDF Report Generator", page_icon="📄")
 
 st.title("📄 Export Agricultural Risk Reports")
