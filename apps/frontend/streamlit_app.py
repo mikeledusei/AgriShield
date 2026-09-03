@@ -1,114 +1,64 @@
+import os
+import requests
 import streamlit as st
 
+# Page Configuration
 st.set_page_config(
-    page_title="AgriShield",
+    page_title="AgriShield Home",
     page_icon="🌾",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-st.title("🌾 AgriShield")
-st.subheader("Protecting Kenya's Food Security, Ensuring Future Sustainability")
+# Backend URL Configuration
+BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL", "https://agrishield-dnao.onrender.com")
 
-st.write(
-    "AgriShield is an agricultural predictive intelligence system "
-    "designed to help identify crop yield and livestock forage risks "
-    "across Kenyan counties."
-)
+# -----------------------------------------------------------------------------
+# SIDEBAR: API HEALTH STATUS BADGE
+# -----------------------------------------------------------------------------
+st.sidebar.title("📌 System Status")
 
-st.divider()
-
-st.sidebar.header("⚙️ Risk Assessment")
-
-county = st.sidebar.selectbox(
-    "Select County",
-    [
-        "Uasin Gishu",
-        "Kajiado",
-        "Nairobi",
-        "Mombasa",
-        "Kisumu",
-        "Nakuru"
-    ]
-)
-
-focus = st.sidebar.selectbox(
-    "Agricultural Focus",
-    [
-        "Crop",
-        "Livestock Forage"
-    ]
-)
-
-st.header("📊 Agricultural Risk Assessment")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    st.info(f"**Selected County:** {county}")
-
-with col2:
-    st.info(f"**Focus Area:** {focus}")
-
-
-st.write("")
-
-if st.button("🔍 Predict Agricultural Risk", use_container_width=True):
-
-    st.success("Prediction request submitted!")
-
-    st.metric(
-        label="Risk Level",
-        value="LOW"
-    )
-
-    st.metric(
-        label="Yield Forecast",
-        value="2,500 kg/ha"
-    )
-
-st.divider()
-
-st.header("🤖 Gria AI Assistant")
-
-st.write(
-    "Ask Gria about agricultural risks, predictions, "
-    "or recommendations for a selected county."
-)
-
-question = st.text_input(
-    "Ask Gria a question",
-    placeholder="e.g. What is causing the agricultural risk?"
-)
-
-if st.button("💬 Ask Gria"):
-
-    if question:
-        st.info("Gria response will appear here once the backend is connected.")
+try:
+    # 5-second timeout to handle Render cold starts gracefully
+    health_res = requests.get(f"{BACKEND_URL}/api/v1/health", timeout=5)
+    if health_res.status_code == 200:
+        st.sidebar.success("🟢 API Status: Online")
     else:
-        st.warning("Please enter a question first.")
+        st.sidebar.warning(f"🟡 API Status: Degraded ({health_res.status_code})")
+except Exception:
+    st.sidebar.error("🔴 API Status: Cold Starting / Offline")
 
-st.divider()
+st.sidebar.info("Note: Render free tier may take 30–60s on first load.")
 
-st.header("📄 Agricultural Risk Report")
+# -----------------------------------------------------------------------------
+# MAIN CONTENT: PUBLIC HOME LANDING
+# -----------------------------------------------------------------------------
+st.title("🌾 Welcome to AgriShield")
+st.subheader("Agricultural Risk Intelligence & Early Warning System")
 
-st.write(
-    "Generate a professional report containing the prediction, "
-    "visualizations and Gria's recommendations."
-)
-
-st.button(
-    "📥 Download PDF Report",
-    disabled=True
-)
-st.set_page_config(page_title="AgriShield", page_icon="🌾", layout="wide")
-
-st.title("🌾 AgriShield Platform")
 st.markdown("""
-Welcome to the AgriShield Agricultural Risk Intelligence System. 
+AgriShield provides data-driven risk insights, machine learning predictions, 
+and AI-generated evaluations to safeguard crop yields and livestock forage across Kenyan counties.
 
-Select a tool from the sidebar on the left to get started:
-* **Dashboard**: Input county data and run risk predictions.
-* **Map View**: Visualize regional risk heatmaps.
-* **Reports**: Generate and download PDF risk assessments.
+### 🚀 Key Features
+* **Risk Predictions:** Analyze county-level agricultural vulnerabilities for crops and livestock.
+* **Spatial Risk Maps:** Interactive map visualizations highlighting high-risk regions.
+* **Gria AI Insights:** Natural language risk explanations and actionable mitigation advice.
+* **PDF Report Generation:** Export standardized regional risk assessments for government and NGO planning.
+
+---
+**Use the sidebar on the left to navigate between application tools.**
 """)
+
+# -----------------------------------------------------------------------------
+# FOOTER: METADATA FETCHING (GET /)
+# -----------------------------------------------------------------------------
+st.divider()
+try:
+    meta_res = requests.get(f"{BACKEND_URL}/", timeout=3)
+    if meta_res.status_code == 200:
+        meta_data = meta_res.json()
+        st.caption(f"Powered by AgriShield API v{meta_data.get('version', '1.0.0')} | Backend Host: Render")
+    else:
+        st.caption("Powered by AgriShield API | Backend Host: Render")
+except Exception:
+    st.caption("Powered by AgriShield API | Backend Host: Render")
