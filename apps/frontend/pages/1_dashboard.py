@@ -2,35 +2,31 @@ import os
 import streamlit as st
 import requests
 
-# Dynamically fetch BACKEND_URL from Streamlit Cloud Secrets, falling back to Render
 BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL", "https://agrishield-dnao.onrender.com")
-API_KEY = st.secrets.get("API_KEY") or os.getenv("API_KEY", "")
 
 st.title("🌾 AgriShield: Agricultural Risk Intelligence")
 
-# 1. Input Controls for Users
-selected_county = st.selectbox(
-    "Select County",
-    ["Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"]
-)
-sector = st.radio("Select Risk Area", ["Crops", "Livestock Forage"])
+selected_county = st.selectbox("Select County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
+focus_area = st.radio("Select Focus", ["crops", "livestock"])
 
-# 2. Trigger Prediction Button
 if st.button("Generate Risk Prediction"):
-    with st.spinner("Fetching predictions and Gria AI analysis..."):
+    with st.spinner("Fetching prediction from Render... (Note: Cold start may take ~30s)"):
         try:
-            payload = {"county": selected_county, "sector": sector}
-            headers = {"X-API-Key": API_KEY} if API_KEY else {}
+            payload = {"county_name": selected_county, "focus": focus_area}
             
-            response = requests.post(f"{BACKEND_URL}/predictions/", json=payload, headers=headers)
+            # Updated to include /api/v1/
+            response = requests.post(f"{BACKEND_URL}/api/v1/predictions/crop-yield", json=payload)
             
             if response.status_code == 200:
                 data = response.json()
-                st.success(f"Risk Score: {data.get('risk_score', 'N/A')}")
-                st.subheader("🤖 Gria AI Analysis")
-                st.write(data.get("gria_summary", "No AI analysis available."))
+                
+                # Render backend fields
+                st.metric(label="Risk Score", value=data.get("risk_score", "N/A"))
+                st.subheader(f"Risk Level: {data.get('risk_level', 'UNKNOWN')}")
+                st.write(f"**Main Driver:** {data.get('main_driver', 'N/A')}")
+                st.info(f"**Recommendation:** {data.get('recommendation', 'N/A')}")
             else:
-                st.error("Failed to fetch prediction from backend server.")
+                st.error(f"Backend returned status code {response.status_code}")
                 
         except Exception as e:
-            st.error(f"Cannot connect to backend server. Make sure FastAPI is running. Error: {e}")
+            st.error(f"Cannot connect to backend server: {e}")
