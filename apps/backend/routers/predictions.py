@@ -1,95 +1,92 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
+"""Predictions API: county, history, batch, compare, region, scenario."""
+from datetime import datetime, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
+
 from core.database import get_db
-from core.redis_client import get_redis
-from core.supabase_client import get_supabase
-from supabase import Client
-import redis.asyncio as redis
-import json
-from datetime import datetime
-from pydantic import BaseModel
-from typing import Optional
+from database import models
+from schemas import predictions as sch
+from services.prediction_service import CountyNotFoundError, get_engine
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
 
-class PredictionRequest(BaseModel):
-    crop_type: str
-    location: str
-    planting_date: str
-    farm_size: Optional[float] = None
-    soil_type: Optional[str] = None
+def _predict(engine, db, name, focus=None, persist=True) -> sch.PredictionOut:
+    try:
+        return sch.PredictionOut(**engine.predict(db, name, focus, persist=persist))
+    except CountyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
-class PredictionResponse(BaseModel):
-    prediction_id: str
-    yield_forecast: float
-    risk_level: str
-    recommendations: list[str]
-    created_at: datetime
-    cached: bool = False
-
-
-@router.post("/crop-yield", response_model=PredictionResponse)
-async def predict_crop_yield(
-    request: PredictionRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    redis_client: redis.Redis = Depends(get_redis),
-    supabase: Client = Depends(get_supabase)
-):
-    """
-    Predict crop yield based on input parameters.
-    Uses Redis caching to improve performance.
-    """
-    # Create cache key
-    cache_key = f"prediction:{request.crop_type}:{request.location}:{request.planting_date}"
-    
-    # Try to get from cache
-    cached_result = await redis_client.get(cache_key)
-    if cached_result:
-        data = json.loads(cached_result)
-        return PredictionResponse(**data, cached=True)
-    
-    # TODO: Implement actual prediction logic with NVIDIA API
-    # For now, return mock data
-    prediction_data = {
-        "prediction_id": str(uuid.uuid4()),
-        "yield_forecast": 2500.0,  # kg/hectare
-        "risk_level": "low",
-        "recommendations": [
-            "Optimal planting window identified",
-            "Consider irrigation during weeks 6-8",
-            "Apply fertilizer at planting and week 4"
-        ],
-        "created_at": datetime.utcnow()
-    }
-    
-    # Cache the result
-    await redis_client.setex(
-        cache_key,
-        300,  # 5 minutes TTL
-        json.dumps(prediction_data, default=str)
-    )
-    
-    # TODO: Save to database
-    # async with db.begin():
-    #     db.add(Prediction(**prediction_data))
-    
-    return PredictionResponse(**prediction_data, cached=False)
+@router.post("/crop-yield", response_model=sch.PredictionOut)
+def crop_yield(req: sch.CountyPredictionRequest, db: Session = Depends(get_db)):
+    return _predict(get_engine(), db, req.county_name, req.focus)
 
 
 @router.get("/history")
-async def get_prediction_history(
-    limit: int = 10,
-    offset: int = 0,
-    db: AsyncSession = Depends(get_db)
-):
-    """Get user's prediction history from database."""
-    # TODO: Implement database query
+def prediction_history(county_name: str, months: int = 12, db: Session = Depends(get_db)):
+    county = db.query(models.County).filter(models.County.name.ilike(county_name.strip())).first()
+    if county is None:
+        raise HTTPException(status_code=404, detail=f"County '{county_name}' not found.")
+    cutoff = datetime.utcnow() - timedelta(days=30 * max(1, min(months, 60)))
+    rows = (db.query(models.Prediction)
+            .filter(models.Prediction.county_id == county.id,
+                    models.Prediction.created_at >= cutoff)
+            .order_by(desc(models.Prediction.created_at))
+            .limit(200).all())
     return {
-        "predictions": [],
-        "total": 0,
-        "limit": limit,
-        "offset": offset
+        "county_name": county.name,
+        "months": months,
+        "trend": [
+            {"date": r.created_at.isoformat(), "risk_score": r.risk_score, "risk_level": r.risk_level}
+            for r in reversed(rows)
+        ],
     }
+
+
+@router.get("/batch", response_model=sch.BatchResponse)
+def batch_predictions(db: Session = Depends(get_db)):
+    engine = get_engine()
+    counties = db.query(models.County).order_by(models.County.name).all()
+    preds = [_predict(engine, db, c.name, persist=False) for c in counties]
+    return sch.BatchResponse(
+        generated_at=datetime.utcnow().isoformat(),
+        county_count=len(preds),
+        counties=preds,
+    )
+
+
+@router.post("/compare", response_model=sch.CompareResponse)
+def compare_counties(req: sch.CompareRequest, db: Session = Depends(get_db)):
+    engine = get_engine()
+    preds = [_predict(engine, db, name, persist=False) for name in req.counties]
+    ranked = sorted(preds, key=lambda p: p.risk_score, reverse=True)
+    return sch.CompareResponse(counties=ranked, highest_risk=ranked[0], lowest_risk=ranked[-1])
+
+
+@router.post("/region", response_model=sch.RegionResponse)
+def region_aggregation(req: sch.RegionRequest, db: Session = Depends(get_db)):
+    engine = get_engine()
+    counties = (db.query(models.County)
+                .filter(models.County.region.ilike(req.region_name.strip()))
+                .order_by(models.County.name).all())
+    if not counties:
+        raise HTTPException(status_code=404, detail=f"No counties found in region '{req.region_name}'.")
+    preds = [_predict(engine, db, c.name, persist=False) for c in counties]
+    avg = round(sum(p.risk_score for p in preds) / len(preds), 1)
+    level = "SAFE" if avg < 25 else "MODERATE" if avg < 50 else "HIGH" if avg < 75 else "CRITICAL"
+    return sch.RegionResponse(
+        region_name=req.region_name, county_count=len(preds),
+        average_risk=avg, risk_level=level, counties=preds,
+    )
+
+
+@router.post("/scenario", response_model=sch.ScenarioResponse)
+def scenario_analysis(req: sch.ScenarioRequest, db: Session = Depends(get_db)):
+    try:
+        return sch.ScenarioResponse(**get_engine().scenario(
+            db, req.county_name, req.rainfall_change_pct, req.temp_change_c, req.ndvi_shock))
+    except CountyNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))

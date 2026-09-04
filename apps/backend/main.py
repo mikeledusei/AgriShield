@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 
 from core.config import settings
-from routers import health, predictions, gria, uploads, reports, auth, storage
+from routers import health, predictions, gria, uploads, reports, storage, auth
 from services import logging_service
 
 
