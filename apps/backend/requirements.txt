@@ -37,3 +37,4 @@ Pillow>=10.4.0
 reportlab>=4.2.0
 python-dotenv>=1.0.0
 pydantic-settings>=2.0.0
+pydantic[email]

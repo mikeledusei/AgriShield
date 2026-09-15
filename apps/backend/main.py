@@ -9,6 +9,7 @@ from routers import health, predictions, gria, uploads, reports, storage, auth
 from services import logging_service
 
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 1. Modern, elegant, and perfectly spelled startup banner
