@@ -317,3 +317,22 @@ class PredictionEngine:
 @lru_cache()
 def get_engine() -> PredictionEngine:
     return PredictionEngine()
+
+
+def quick_risk(county_name: str) -> tuple[int, str]:
+    """Quickly get risk score and level for a county without DB persistence."""
+    from database.connection import SessionLocal
+    from database import models as db_models
+
+    db = SessionLocal()
+    try:
+        county = db.query(db_models.County).filter(
+            db_models.County.name.ilike(county_name.strip())
+        ).first()
+        if county is None:
+            raise CountyNotFoundError(f"County '{county_name}' not found.")
+        engine = get_engine()
+        result = engine.predict(db, county.name, persist=False)
+        return result["risk_score"], result["risk_level"]
+    finally:
+        db.close()

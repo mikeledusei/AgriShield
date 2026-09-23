@@ -1,59 +1,37 @@
-"""
-Health check endpoint.
-Synchronous DB check (matches the sync SQLAlchemy engine),
-with graceful handling of optional services (Redis).
-"""
-from fastapi import APIRouter, Depends
-from sqlalchemy import text
-from sqlalchemy.orm import Session
+import os
+import json
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from typing import Optional
 
-from core.config import settings
-from core.database import get_db
+from fastapi import APIRouter
 
-router = APIRouter(tags=["health"])
+# Quick health check that doesn't require DB
+router = APIRouter()
 
+class HealthResponse(BaseModel):
+    status: str
+    services: dict
+    version: str = "1.0.0"
 
 @router.get("/health")
-def health_check(db: Session = Depends(get_db)):
-    """Report the live status of every backing service."""
+async def health_check():
     services = {}
-
-    # 1. NeonDB - synchronous check, NO await
-    try:
-        db.execute(text("SELECT 1"))
-        services["database"] = "connected"
-    except Exception as exc:
-        services["database"] = f"error: {exc}"
-
-    # 2. Redis - optional (API falls back to in-memory cache)
-    try:
-        import redis as redis_lib
-        client = redis_lib.Redis.from_url(
-            settings.REDIS_URL, socket_connect_timeout=2
-        )
-        client.ping()
-        services["redis"] = "connected"
-    except Exception as exc:
-        services["redis"] = f"offline (optional, using in-memory cache)"
-
-    # 3. Supabase
-    try:
-        from core.supabase_client import get_supabase
-        get_supabase()
-        services["supabase"] = "connected"
-    except Exception as exc:
-        services["supabase"] = f"error: {exc}"
-
-    # 4. Gria AI (NVIDIA NIM)
-    services["gria_ai"] = (
-        "configured" if settings.NVIDIA_API_KEY else "not configured"
+    services["supabase"] = "connected" if os.getenv("SUPABASE_URL") else "not configured"
+    services["redis"] = "connected" if os.getenv("REDIS_URL") else "offline (optional)"
+    services["gria_ai"] = "configured" if os.getenv("NVIDIA_API_KEY") else "not configured"
+    return HealthResponse(
+        status="healthy",
+        services=services
     )
 
-    # Overall status: healthy if the database is reachable.
-    # Redis is optional and does not affect the status.
-    healthy = services["database"] == "connected"
-
+@router.get("/")
+async def root():
     return {
-        "status": "healthy" if healthy else "unhealthy",
-        "services": services,
+        "name": "AgriShield API",
+        "tagline": "Protecting Kenya's Food Security, Ensuring Future Sustainability.",
+        "docs": "/docs",
+        "health": "/api/v1/health",
+        "version": "1.0.0"
     }

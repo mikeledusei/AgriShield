@@ -1,0 +1,54 @@
+{
+  "app_name": "AgriShield",
+  "tagline": "Taarifa ya Hali ya Haraka na Mfumo wa Tahadhari ya Kilimo",
+  "features": {
+    "risk_predictions": "Tathmini ya hatari za kilimo kwa mikoa ya Kenya.",
+    "spatial_maps": "Ramani za ki-interaktiti zenye kuonyesha mikoa ya hatari.",
+    "gria_ai": "Maelezo ya lugha ya kawaida ya hatari na ushauri wa kuzuia.",
+    "pdf_reports": "Samunisha matukio ya hatari ya kibahekari kwa serikali na NGO."
+  },
+  "navigation": {
+    "home": "Nyumbani",
+    "dashboard": "Dashibodi",
+    "upload": "Pakua Data",
+    "map": "Ramani",
+    "compare": "Ingiza",
+    "reports": "Matukio",
+    "trends": "Mwenendo",
+    "scenarios": "Upangaji Waqibo",
+    "about": "Kuhusu"
+  },
+  "risk_levels": {
+    "SAFE": "Salama",
+    "MODERATE": "Kiasi",
+    "HIGH": "Kubwa",
+    "CRITICAL": "Muhimu"
+  },
+  "general": {
+    "loading": "Inapakuliwa...",
+    "error": "Kumekuwa tatizo",
+    "success": "Mafanikio",
+    "warning": "Tahadhari",
+    "retry": "Jaribu tena",
+    "submit": "Tuma",
+    "cancel": "Kansu",
+    "select": "Chagua",
+    "search": "Tafuta",
+    "login": "Ingia",
+    "logout": "Toka",
+    "register": "Jiandikisha",
+    "email": "Barua",
+    "password": "Neno",
+    "county": "Kaunti",
+    "report": "Matukio",
+    "reports": "Matukio",
+    "download": "Pakua",
+    "upload": "Pakua",
+    "analyze": "Tathmini",
+    "generate": "Tengeneza",
+    "refresh": "Rejesha",
+    "status": "Hali",
+    "online": "Mtandaoni",
+    "offline": "Nje ya Mtandaoni"
+  }
+}

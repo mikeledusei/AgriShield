@@ -5,6 +5,8 @@
 # NEVER commit: data, models, secrets, caches, environments.
 # ============================================================
 
+.kilo
+
 
 # ============================================================
 # 1. ENVIRONMENT VARIABLES & SECRETS (CRITICAL)
@@ -58,7 +60,6 @@ data_pipeline/data/geospatial/
 ml-models/models/
 
 # Common model file extensions anywhere in the project
-*.joblib
 *.pkl
 *.pickle
 *.onnx
@@ -66,6 +67,14 @@ ml-models/models/
 *.pth
 *.h5
 *.tflite
+
+# Exception: Keep tracked model artifacts needed at runtime
+!ml-models/models/xgboost_agrishield_v1.joblib
+!ml-models/models/scaler.joblib
+!ml-models/models/logreg_baseline.joblib
+!ml-models/models/xgb_champion.joblib
+!ml-models/models/feature_columns.json
+!ml-models/models/county_ndvi_stats.csv
 
 
 # ============================================================

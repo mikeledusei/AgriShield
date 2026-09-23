@@ -1,19 +1,17 @@
-import os
-import requests
+"""County risk map page with live predictions."""
 import streamlit as st
-import folium
-from streamlit_folium import st_folium
 
-# Page Configuration
+from components.api_client import predict
+from shared.sidebar import render_sidebar
+from components.map import create_risk_map
+
 st.set_page_config(page_title="County Risk Map", page_icon="🗺️", layout="wide")
 
-# Backend Configuration
-BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL", "https://agrishield-dnao.onrender.com")
+render_sidebar()
 
 st.title("🗺️ Kenya Agricultural Risk Map")
 st.write("Interactive spatial visualization of crop yield and livestock forage risks across target counties.")
 
-# Target Counties with Coordinates
 COUNTIES = [
     {"name": "Turkana", "lat": 3.1167, "lon": 35.6000},
     {"name": "Kajiado", "lat": -1.8523, "lon": 36.7768},
@@ -22,65 +20,36 @@ COUNTIES = [
     {"name": "Kilifi", "lat": -3.5107, "lon": 39.9093},
 ]
 
-# Color & Marker Mapping based on Backend risk_level contract
-# (SAFE / MODERATE / HIGH / CRITICAL)
-COLOR_MAP = {
-    "SAFE": "green",
-    "MODERATE": "orange",
-    "HIGH": "red",
-    "CRITICAL": "darkred",
-    "UNKNOWN": "gray"
-}
-
-# Sector/Focus Selector
 focus_area = st.radio("Select Risk Focus", ["crops", "livestock"], horizontal=True)
 
-# Fetch Live Predictions via Loop (Fallback until /predictions/batch is live)
 county_map_data = []
+errors = []
 
-with st.spinner("Fetching live county risk predictions from backend... (Note: Cold starts may take ~30s)"):
+with st.spinner("Fetching live county risk predictions from backend..."):
     for c in COUNTIES:
         risk_level = "UNKNOWN"
         risk_score = "N/A"
-        
         try:
-            payload = {"county_name": c["name"], "focus": focus_area}
-            res = requests.post(
-                f"{BACKEND_URL}/api/v1/predictions/crop-yield", 
-                json=payload, 
-                timeout=10
-            )
-            
-            if res.status_code == 200:
-                data = res.json()
-                risk_level = str(data.get("risk_level", "UNKNOWN")).upper()
-                risk_score = data.get("risk_score", "N/A")
-        except Exception:
-            pass  # Fall back to UNKNOWN if network timeout occurs
-            
+            data = predict(c["name"], focus_area)
+            risk_level = str(data.get("risk_level", "UNKNOWN")).upper()
+            risk_score = data.get("risk_score", "N/A")
+        except Exception as e:
+            errors.append(f"{c['name']}: {e}")
+
         county_map_data.append({
             "county": c["name"],
             "lat": c["lat"],
             "lon": c["lon"],
             "risk_level": risk_level,
             "risk_score": risk_score,
-            "color": COLOR_MAP.get(risk_level, "gray")
         })
 
-# Create Folium Map centered on Kenya
-m = folium.Map(location=[0.0236, 37.9062], zoom_start=6, tiles="OpenStreetMap")
+if errors:
+    with st.expander("⚠️ Some counties could not be loaded"):
+        for err in errors:
+            st.caption(err)
 
-# Add Live County Risk Markers
-for item in county_map_data:
-    folium.Marker(
-        location=[item["lat"], item["lon"]],
-        popup=f"<b>{item['county']}</b><br>Level: {item['risk_level']}<br>Score: {item['risk_score']}",
-        tooltip=f"{item['county']} ({item['risk_level']})",
-        icon=folium.Icon(color=item["color"], icon="info-sign")
-    ).add_to(m)
-
-# Render Map in Streamlit
-st_data = st_folium(m, width=900, height=500)
+create_risk_map(county_map_data)
 
 st.markdown("""
 **Legend:**
@@ -88,5 +57,5 @@ st.markdown("""
 * 🟠 **MODERATE:** Monitor closely for environmental stress
 * 🔴 **HIGH:** High vulnerability detected
 * 🔴 **CRITICAL:** Immediate relief/intervention required
-* ⚪ **UNKNOWN / GRAY:** Backend cold starting or unreachable
+* ⚪ **UNKNOWN:** Backend cold starting or unreachable
 """)

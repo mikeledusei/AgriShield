@@ -5,6 +5,7 @@ numpy>=1.26.0
 # ===== Machine Learning =====
 scikit-learn>=1.4.0            # Logistic Regression, Random Forest, metrics
 xgboost>=2.0.0                 # Champion model
+lightgbm>=4.3.0                # Gradient boosting
 joblib>=1.4.0                  # Save/load .joblib models
 
 # ===== Model Interpretability =====

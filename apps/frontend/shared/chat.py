@@ -1,6 +1,6 @@
 """Gria AI Chat component."""
 import streamlit as st
-from components.api_client import chat_with_gria
+from shared.api_client import chat_with_gria
 
 
 def render_chat(county_name: str = None, placeholder_text: str = "Ask Gria about agricultural risks..."):

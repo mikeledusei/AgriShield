@@ -1,0 +1,132 @@
+"""AgriShield Frontend Styles"""
+
+/* ===== Sidebar ===== */
+section[data-testid="stSidebar"] {
+    background-color: #1a2e1a;
+    color: #e0e8e0;
+}
+
+section[data-testid="stSidebar"] .stMarkdown h1,
+section[data-testid="stSidebar"] .stMarkdown h2,
+section[data-testid="stSidebar"] .stMarkdown h3 {
+    color: #4caf50;
+}
+
+section[data-testid="stSidebar"] .stButton>button {
+    background-color: #2e7d32;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+}
+
+section[data-testid="stSidebar"] .stButton>button:hover {
+    background-color: #388e3c;
+    color: white;
+}
+
+/* ===== Risk Level Colors ===== */
+.risk-safe {
+    color: #2e7d32;
+    font-weight: bold;
+}
+
+.risk-moderate {
+    color: #fbc02d;
+    font-weight: bold;
+}
+
+.risk-high {
+    color: #f57c00;
+    font-weight: bold;
+}
+
+.risk-critical {
+    color: #d32f2f;
+    font-weight: bold;
+}
+
+/* ===== Header ===== */
+h1 {
+    color: #2e7d32;
+    border-bottom: 3px solid #4caf50;
+    padding-bottom: 10px;
+}
+
+h2 {
+    color: #1b5e20;
+}
+
+/* ===== Cards ===== */
+[data-testid="stExpander"] {
+    border: 1px solid #c8e6c9;
+    border-radius: 12px;
+    margin-bottom: 12px;
+}
+
+/* ===== Metric Cards ===== */
+[data-testid="stMetric"] {
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 12px;
+    background-color: #f9f9f9;
+}
+
+/* ===== Buttons ===== */
+.stButton>button {
+    border-radius: 8px;
+    background-color: #2e7d32;
+    color: white;
+    border: none;
+    transition: background-color 0.3s;
+}
+
+.stButton>button:hover {
+    background-color: #1b5e20;
+    color: white;
+}
+
+/* ===== Progress Bars ===== */
+[data-testid="stProgress"] > div > div > div > div {
+    border-radius: 8px;
+}
+
+/* ===== Alert Styles ===== */
+.stError {
+    border-left: 4px solid #d32f2f;
+}
+
+.stWarning {
+    border-left: 4px solid #f57c00;
+}
+
+.stSuccess {
+    border-left: 4px solid #2e7d32;
+}
+
+.stInfo {
+    border-left: 4px solid #1976d2;
+}
+
+/* ===== Map Container ===== */
+.stFolium {
+    border-radius: 12px;
+    border: 2px solid #e0e0e0;
+    overflow: hidden;
+}
+
+/* ===== Tables ===== */
+[data-testid="stDataFrame"] {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* ===== Footer ===== */
+footer {
+    visibility: hidden;
+}
+
+/* ===== Loading Spinner ===== */
+.stSpinner > div {
+    border-radius: 50%;
+}

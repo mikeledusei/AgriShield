@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from core.auth import get_current_user
 from core.database import get_db
 from database import models
 from schemas import predictions as sch
@@ -21,12 +22,16 @@ def _predict(engine, db, name, focus=None, persist=True) -> sch.PredictionOut:
 
 
 @router.post("/crop-yield", response_model=sch.PredictionOut)
-def crop_yield(req: sch.CountyPredictionRequest, db: Session = Depends(get_db)):
+def crop_yield(req: sch.CountyPredictionRequest,
+               db: Session = Depends(get_db),
+               user: dict = Depends(get_current_user)):
     return _predict(get_engine(), db, req.county_name, req.focus)
 
 
 @router.get("/history")
-def prediction_history(county_name: str, months: int = 12, db: Session = Depends(get_db)):
+def prediction_history(county_name: str, months: int = 12,
+                       db: Session = Depends(get_db),
+                       user: dict = Depends(get_current_user)):
     county = db.query(models.County).filter(models.County.name.ilike(county_name.strip())).first()
     if county is None:
         raise HTTPException(status_code=404, detail=f"County '{county_name}' not found.")
@@ -47,7 +52,8 @@ def prediction_history(county_name: str, months: int = 12, db: Session = Depends
 
 
 @router.get("/batch", response_model=sch.BatchResponse)
-def batch_predictions(db: Session = Depends(get_db)):
+def batch_predictions(db: Session = Depends(get_db),
+                      user: dict = Depends(get_current_user)):
     engine = get_engine()
     counties = db.query(models.County).order_by(models.County.name).all()
     preds = [_predict(engine, db, c.name, persist=False) for c in counties]
@@ -59,7 +65,8 @@ def batch_predictions(db: Session = Depends(get_db)):
 
 
 @router.post("/compare", response_model=sch.CompareResponse)
-def compare_counties(req: sch.CompareRequest, db: Session = Depends(get_db)):
+def compare_counties(req: sch.CompareRequest, db: Session = Depends(get_db),
+                     user: dict = Depends(get_current_user)):
     engine = get_engine()
     preds = [_predict(engine, db, name, persist=False) for name in req.counties]
     ranked = sorted(preds, key=lambda p: p.risk_score, reverse=True)
@@ -67,7 +74,8 @@ def compare_counties(req: sch.CompareRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/region", response_model=sch.RegionResponse)
-def region_aggregation(req: sch.RegionRequest, db: Session = Depends(get_db)):
+def region_aggregation(req: sch.RegionRequest, db: Session = Depends(get_db),
+                       user: dict = Depends(get_current_user)):
     engine = get_engine()
     counties = (db.query(models.County)
                 .filter(models.County.region.ilike(req.region_name.strip()))
@@ -84,7 +92,8 @@ def region_aggregation(req: sch.RegionRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/scenario", response_model=sch.ScenarioResponse)
-def scenario_analysis(req: sch.ScenarioRequest, db: Session = Depends(get_db)):
+def scenario_analysis(req: sch.ScenarioRequest, db: Session = Depends(get_db),
+                      user: dict = Depends(get_current_user)):
     try:
         return sch.ScenarioResponse(**get_engine().scenario(
             db, req.county_name, req.rainfall_change_pct, req.temp_change_c, req.ndvi_shock))

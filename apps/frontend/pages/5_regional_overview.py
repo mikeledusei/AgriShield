@@ -1,101 +1,82 @@
-import os
-import requests
+"""Export Agricultural Risk Reports - report generation page."""
 import streamlit as st
 
-# Page Configuration
-st.set_page_config(page_title="PDF Report Generator", page_icon="📄", layout="wide")
+from components.api_client import create_report, list_reports, download_report_pdf, predict
+from shared.sidebar import render_sidebar
+from components.gauges import risk_gauge
 
-# Backend Configuration
-BACKEND_URL = st.secrets.get("BACKEND_URL") or os.getenv("BACKEND_URL", "https://agrishield-dnao.onrender.com")
+st.set_page_config(page_title="Regional Overview & Reports", page_icon="📄", layout="wide")
+
+render_sidebar()
 
 st.title("📄 Export Agricultural Risk Reports")
 st.write("Generate, view, and download standardized PDF reports containing ML risk scores and Gria AI insights.")
 
-# -----------------------------------------------------------------------------
-# SECTION 1: CREATE NEW REPORT
-# -----------------------------------------------------------------------------
 st.subheader("1. Generate New County Report")
 
 col1, col2, col3 = st.columns([2, 2, 1])
-
 with col1:
-    selected_county = st.selectbox("Select Target County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
-
+    selected_county = st.selectbox(
+        "Select Target County",
+        ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"],
+    )
 with col2:
-    report_type = st.selectbox("Report Type", ["Crop Yield Risk", "Livestock Forage Risk", "Comprehensive Assessment"])
-
+    report_type = st.selectbox(
+        "Report Type",
+        ["Crop Yield Risk", "Livestock Forage Risk", "Comprehensive Assessment"],
+    )
 with col3:
     is_detailed = st.checkbox("Detailed View", value=True)
 
 if st.button("Generate Report", type="primary"):
-    with st.spinner("Compiling PDF report via FastAPI backend... (Cold starts may take ~30s)"):
+    with st.spinner("Compiling report via FastAPI backend..."):
         try:
-            payload = {
-                "county_name": selected_county,
-                "report_type": report_type,
-                "detailed": is_detailed
-            }
-            
-            # Endpoint: POST /api/v1/reports/create
-            response = requests.post(
-                f"{BACKEND_URL}/api/v1/reports/create",
-                json=payload,
-                timeout=30
-            )
-            
-            if response.status_code in [200, 201]:
-                res_data = response.json()
-                report_id = res_data.get("report_id") or res_data.get("id")
-                st.success(f"✅ Report generated successfully! (ID: {report_id})")
-            else:
-                st.error(f"Failed to generate report. Backend returned status code {response.status_code}")
-        
+            result = create_report(selected_county, report_type, is_detailed)
+            report_id = result.get("id")
+            st.success(f"✅ Report generated successfully! (ID: {report_id})")
+            st.session_state["last_report_id"] = report_id
         except Exception as e:
-            st.error(f"Could not connect to report generation endpoint: {e}")
+            st.error(f"Report generation failed: {e}")
 
 st.divider()
 
-# -----------------------------------------------------------------------------
-# SECTION 2: VIEW & DOWNLOAD EXISTING REPORTS
-# -----------------------------------------------------------------------------
-st.subheader("2. Available Reports Library")
-
+st.subheader("2. Current Risk Preview")
 try:
-    # Endpoint: GET /api/v1/reports/
-    list_res = requests.get(f"{BACKEND_URL}/api/v1/reports/", timeout=10)
-    
-    if list_res.status_code == 200:
-        reports_list = list_res.json()
-        
-        if reports_list:
-            st.dataframe(reports_list, use_container_width=True)
-            
-            # Select specific report ID for download
-            st.subheader("3. Download PDF Artifact")
-            report_id_input = st.text_input("Enter Report ID to Download", placeholder="e.g., rpt_12345")
-            
-            if st.button("Download PDF"):
-                if report_id_input:
-                    with st.spinner("Fetching PDF document binary stream..."):
-                        # Endpoint: GET /api/v1/reports/{report_id}
-                        pdf_res = requests.get(f"{BACKEND_URL}/api/v1/reports/{report_id_input}", timeout=15)
-                        
-                        if pdf_res.status_code == 200:
-                            st.download_button(
-                                label="💾 Save PDF to Disk",
-                                data=pdf_res.content,
-                                file_name=f"AgriShield_Report_{selected_county}_{report_id_input}.pdf",
-                                mime="application/pdf"
-                            )
-                        else:
-                            st.error(f"Could not retrieve PDF file. Status: {pdf_res.status_code}")
-                else:
-                    st.warning("Please enter a valid Report ID.")
-        else:
-            st.info("No reports found in the library. Generate one using the form above.")
-            
-    else:
-        st.warning(f"Could not fetch reports list (Status: {list_res.status_code}). Render service may be initializing.")
+    data = predict(selected_county)
+    risk_gauge(data.get("risk_score"), data.get("risk_level"), title="Current Risk Score")
+except Exception:
+    st.caption("Backend may be initializing. Try again shortly.")
 
-except Exception as e:
+st.divider()
+
+st.subheader("3. Available Reports Library")
+try:
+    list_res = list_reports()
+    reports_list = list_res.get("reports", []) if list_res else []
+
+    if reports_list:
+        import pandas as pd
+        df = pd.DataFrame(reports_list)
+        st.dataframe(df, use_container_width=True)
+
+        st.subheader("4. Download PDF")
+        report_ids = [str(r.get("id")) for r in reports_list]
+        selected_id = st.selectbox("Select Report ID", report_ids)
+
+        if st.button("Prepare PDF Download"):
+            if selected_id:
+                with st.spinner("Fetching PDF document..."):
+                    try:
+                        pdf_bytes = download_report_pdf(selected_id)
+                        st.download_button(
+                            label="💾 Save PDF to Disk",
+                            data=pdf_bytes,
+                            file_name=f"AgriShield_Report_{selected_id}.pdf",
+                            mime="application/pdf",
+                        )
+                    except Exception as e:
+                        st.error(f"Could not retrieve PDF file: {e}")
+    else:
+        st.info("No reports found in the library. Generate one using the form above.")
+except Exception:
     st.info("Reports library endpoint currently initializing or unreachable.")

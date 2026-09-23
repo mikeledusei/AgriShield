@@ -8,6 +8,8 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 async def get_api_key(api_key: str = Security(api_key_header)):
     """Validates the API key from the request headers."""
+    if settings.PUBLIC_MODE:
+        return api_key
     if api_key == settings.API_KEY:
         return api_key
     raise HTTPException(

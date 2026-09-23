@@ -1,0 +1,54 @@
+{
+  "app_name": "AgriShield",
+  "tagline": "Agricultural Risk Intelligence & Early Warning System",
+  "features": {
+    "risk_predictions": "Analyze county-level agricultural vulnerabilities for crops and livestock.",
+    "spatial_maps": "Interactive map visualizations highlighting high-risk regions.",
+    "gria_ai": "Natural language risk explanations and actionable mitigation advice.",
+    "pdf_reports": "Export standardized regional risk assessments for government and NGO planning."
+  },
+  "navigation": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "upload": "Upload Data",
+    "map": "Map View",
+    "compare": "Compare",
+    "reports": "Reports",
+    "trends": "Trends",
+    "scenarios": "Scenario Planning",
+    "about": "About"
+  },
+  "risk_levels": {
+    "SAFE": "Safe",
+    "MODERATE": "Moderate",
+    "HIGH": "High",
+    "CRITICAL": "Critical"
+  },
+  "general": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "success": "Success",
+    "warning": "Warning",
+    "retry": "Retry",
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "select": "Select",
+    "search": "Search",
+    "login": "Login",
+    "logout": "Logout",
+    "register": "Register",
+    "email": "Email",
+    "password": "Password",
+    "county": "County",
+    "report": "Report",
+    "reports": "Reports",
+    "download": "Download",
+    "upload": "Upload",
+    "analyze": "Analyze",
+    "generate": "Generate",
+    "refresh": "Refresh",
+    "status": "Status",
+    "online": "Online",
+    "offline": "Offline"
+  }
+}

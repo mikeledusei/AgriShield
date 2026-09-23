@@ -1,0 +1,1 @@
+"""AgriShield backend core module."""

@@ -1,4 +1,4 @@
-"""Pydantic models defining the API data contract."""
+"""Pydantic models defining the API data contract (non-prediction schemas)."""
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel
@@ -11,73 +11,6 @@ class ModelInput(BaseModel):
     ndvi_pasture_index: float
     temp_max_avg: float
     soil_moisture_deficit: float
-
-
-# ---------- Prediction ----------
-class CountyPredictionRequest(BaseModel):
-    county_name: str
-    focus: str = "crops"
-
-
-class PredictionResponse(BaseModel):
-    county_name: str
-    focus: str = "crops"
-    risk_score: float
-    risk_level: str
-    main_driver: str
-    recommendation: str
-
-
-class BatchResponse(BaseModel):
-    counties: List[PredictionResponse]
-    generated_at: datetime
-
-
-class RegionRequest(BaseModel):
-    region_name: str
-
-
-class RegionResponse(BaseModel):
-    region_name: str
-    county_count: int
-    average_risk: float
-    risk_level: str
-    counties: List[PredictionResponse]
-
-
-class CompareRequest(BaseModel):
-    counties: List[str]
-
-
-class CompareResponse(BaseModel):
-    counties: List[PredictionResponse]
-
-
-class ScenarioRequest(BaseModel):
-    county_name: str
-    rainfall_change: float = 0.0
-    temp_change: float = 0.0
-
-
-class ScenarioResponse(BaseModel):
-    county_name: str
-    original_risk: float
-    original_level: str
-    scenario_risk: float
-    scenario_level: str
-
-
-# ---------- Trends ----------
-class TrendPoint(BaseModel):
-    date: datetime
-    risk_score: float
-    risk_level: str
-
-
-class TrendsResponse(BaseModel):
-    county_name: str
-    months: int
-    trend: List[TrendPoint]
 
 
 # ---------- Gria ----------
