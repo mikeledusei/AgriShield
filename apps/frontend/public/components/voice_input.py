@@ -1,22 +1,22 @@
-"""Voice input — speech-to-text for hands-free interaction."""
+"""Voice input — speech-to-text for hands-free interaction (placeholder)."""
 import streamlit as st
-from shared.sidebar import render_sidebar
 
 st.subheader("🎤 Voice Input")
-st.write("Speak your question and Gria will read the response aloud.")
+st.info("🎤 **Placeholder / Simulated** — Real voice input requires browser SpeechRecognition API integration.")
 
 col1, col2 = st.columns([1, 1])
 with col1:
     if st.button("🎤 Start Listening", type="primary"):
-        st.info("Listening... (simulated — use keyboard input in production)")
+        st.warning("Voice input not implemented. Use keyboard input below instead.")
 with col2:
     if st.button("🔇 Stop", type="secondary"):
-        st.info("Stopped listening.")
+        st.info("Stopped.")
 
 st.divider()
 st.markdown("""
-### Recent Transcriptions
-- "What is the risk in Turkana?" → 45% — HIGH
-- "Will there be drought this year?" → Moderate risk of drought
-- "How to prepare for floods?" → Elevated flood risk in low-lying areas
+### Implementation Notes
+- **Real implementation** would use Web Speech API (`window.SpeechRecognition`) via Streamlit custom component
+- **Current workaround**: Use the text chat on "Ask Gria" page
+- **Required**: HTTPS origin for microphone access in browsers
+- **Backend**: Could integrate with Whisper API or similar for server-side transcription
 """)

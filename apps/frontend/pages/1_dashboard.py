@@ -1,10 +1,10 @@
 """Risk dashboard page — single-county prediction."""
 import streamlit as st
 
-from components.api_client import predict
+from shared.api_client import predict
 from shared.sidebar import render_sidebar
-from components.gauges import risk_gauge
-from components.chat import render_chat
+from shared.gauges import risk_gauge
+from shared.chat import render_chat
 
 st.set_page_config(
     page_title="AgriShield Dashboard",

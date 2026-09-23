@@ -3,6 +3,7 @@ import streamlit as st
 from shared.api_client import scenario_analysis
 from shared.gauges import risk_gauge, status_card
 from shared.sidebar import render_sidebar
+from shared.constants import PUBLIC_COUNTIES
 
 st.set_page_config(page_title="Scenarios", page_icon="🎛️", layout="wide")
 render_sidebar()
@@ -10,7 +11,7 @@ render_sidebar()
 st.title("🎛️ Government Scenario Planning")
 st.write("Model 'what-if' scenarios for policy planning and resource allocation.")
 
-county = st.selectbox("Select County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
+county = st.selectbox("Select County", PUBLIC_COUNTIES)
 
 st.subheader("Adjust Parameters")
 col1, col2, col3 = st.columns(3)

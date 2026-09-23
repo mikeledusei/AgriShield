@@ -1,7 +1,7 @@
 """About page."""
 import os
 import streamlit as st
-from components.api_client import get_root, check_health
+from shared.api_client import get_root, check_health
 from shared.sidebar import render_sidebar
 
 st.set_page_config(page_title="About", page_icon="ℹ️", layout="wide")

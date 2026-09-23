@@ -4,6 +4,7 @@ from shared.api_client import compare_counties
 from shared.charts import county_comparison_chart
 from shared.gauges import risk_gauge, metric_row
 from shared.sidebar import render_sidebar
+from shared.constants import KENYAN_COUNTIES
 
 st.set_page_config(page_title="Comparison", page_icon="⚖️", layout="wide")
 render_sidebar()
@@ -11,9 +12,7 @@ render_sidebar()
 st.title("⚖️ Government County Comparison")
 st.write("Compare risk levels and statistics across multiple counties for resource allocation.")
 
-county_options = ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi",
-                    "Meru", "Kisumu", "Kitui", "Machakos", "Makueni",
-                    "Bungoma", "Kakamega", "Siaya", "Trans Nzoia", "Nandi"]
+county_options = [c["name"] for c in KENYAN_COUNTIES]
 
 selected = st.multiselect(
     "Select counties to compare (2–10)",

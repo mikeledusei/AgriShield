@@ -4,6 +4,7 @@ import streamlit as st
 from shared.api_client import predict, create_report, download_report_pdf
 from shared.gauges import risk_gauge
 from shared.sidebar import render_sidebar
+from shared.constants import PUBLIC_COUNTIES, REPORT_TYPES
 
 st.set_page_config(page_title="Quick Report", page_icon="📋", layout="wide")
 render_sidebar()
@@ -11,8 +12,8 @@ render_sidebar()
 st.title("📋 Quick Report")
 st.write("Get a quick risk assessment for any Kenyan county. Generate and download a PDF report instantly.")
 
-county = st.selectbox("Select County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
-report_type = st.selectbox("Report Type", ["Crop Yield Risk", "Livestock Forage Risk", "Comprehensive Assessment"])
+county = st.selectbox("Select County", PUBLIC_COUNTIES)
+report_type = st.selectbox("Report Type", REPORT_TYPES)
 detailed = st.checkbox("Detailed View", value=True)
 
 st.divider()

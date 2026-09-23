@@ -1,10 +1,10 @@
 """Historical trends page."""
 import streamlit as st
 
-from components.api_client import get_history, get_batch_predictions
+from shared.api_client import get_history, get_batch_predictions
 from shared.sidebar import render_sidebar
-from components.charts import risk_score_trend_chart, risk_distribution_chart
-from components.gauges import risk_gauge
+from shared.charts import risk_score_trend_chart, risk_distribution_chart
+from shared.gauges import risk_gauge
 
 st.set_page_config(page_title="Historical Trends", page_icon="📈", layout="wide")
 

@@ -1,9 +1,9 @@
 """Scenario planning - what-if analysis."""
 import streamlit as st
 
-from components.api_client import scenario_analysis
+from shared.api_client import scenario_analysis
 from shared.sidebar import render_sidebar
-from components.gauges import risk_gauge, status_card
+from shared.gauges import risk_gauge, status_card
 
 st.set_page_config(page_title="Scenario Planning", page_icon="🎛️", layout="wide")
 

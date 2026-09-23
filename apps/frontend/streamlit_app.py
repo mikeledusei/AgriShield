@@ -1,7 +1,7 @@
 """AgriShield home page — landing, health status, and quick overview."""
 import streamlit as st
 
-from components.api_client import check_health, get_root
+from shared.api_client import check_health, get_root
 from shared.sidebar import render_sidebar
 
 st.set_page_config(

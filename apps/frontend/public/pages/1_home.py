@@ -4,7 +4,7 @@ import streamlit as st
 from shared.api_client import check_health, predict
 from shared.gauges import risk_gauge
 from shared.sidebar import render_sidebar
-from shared.risk_helpers import RISK_THRESHOLDS
+from shared.constants import PUBLIC_COUNTIES, RISK_THRESHOLDS
 
 st.set_page_config(page_title="Home", page_icon="🏠", layout="wide")
 render_sidebar()
@@ -23,7 +23,7 @@ st.divider()
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("🗺️ Featured County Risk")
-    county = st.selectbox("Select a county", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
+    county = st.selectbox("Select a county", PUBLIC_COUNTIES)
     focus = st.radio("Focus", ["crops", "livestock"], horizontal=True, key="home_focus")
     try:
         data = predict(county, focus)
@@ -52,9 +52,9 @@ with col2:
 
 st.divider()
 st.subheader("📊 County Risk Overview")
-st.markdown("""
-- **SAFE** (0–25): Normal agricultural conditions
-- **MODERATE** (25–50): Monitor closely for environmental stress
-- **HIGH** (50–75): High vulnerability detected
-- **CRITICAL** (75–100): Immediate relief/intervention required
+st.markdown(f"""
+- **SAFE** (0–{RISK_THRESHOLDS['MODERATE']}): Normal agricultural conditions
+- **MODERATE** ({RISK_THRESHOLDS['MODERATE']}–{RISK_THRESHOLDS['HIGH']}): Monitor closely for environmental stress
+- **HIGH** ({RISK_THRESHOLDS['HIGH']}–{RISK_THRESHOLDS['CRITICAL']}): High vulnerability detected
+- **CRITICAL** ({RISK_THRESHOLDS['CRITICAL']}–100): Immediate relief/intervention required
 """)

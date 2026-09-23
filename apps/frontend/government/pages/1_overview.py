@@ -7,6 +7,7 @@ from shared.gauges import risk_gauge, metric_row, status_card
 from shared.charts import risk_distribution_chart, county_comparison_chart
 from shared.sidebar import render_sidebar
 from shared.map_renderer import create_risk_map
+from shared.constants import PUBLIC_COUNTIES, KENYAN_COUNTIES
 
 st.set_page_config(page_title="Overview", page_icon="🏛️", layout="wide")
 render_sidebar()
@@ -43,11 +44,11 @@ st.divider()
 st.subheader("🗺️ All Counties Map")
 with st.spinner("Loading map..."):
     counties_data = []
-    for c in ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi", "Meru", "Kisumu", "Kitui"]:
+    for c in KENYAN_COUNTIES[:20]:  # Limit for performance
         try:
-            data = predict(c)
+            data = predict(c["name"])
             counties_data.append({
-                "name": c, "lat": 3.1167, "lon": 35.6000,
+                "name": c["name"], "lat": c["lat"], "lon": c["lon"],
                 "risk_level": data.get("risk_level", "UNKNOWN"),
                 "risk_score": data.get("risk_score", 0),
             })

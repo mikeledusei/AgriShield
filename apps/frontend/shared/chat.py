@@ -8,6 +8,21 @@ def render_chat(county_name: str = None, placeholder_text: str = "Ask Gria about
     if "gria_messages" not in st.session_state:
         st.session_state.gria_messages = []
 
+    # Handle quick prompt triggers
+    if "gria_prompt" in st.session_state:
+        prompt = st.session_state.pop("gria_prompt")
+        st.session_state.gria_messages.append({"role": "user", "content": prompt})
+        with st.spinner("Gria is thinking..."):
+            try:
+                response = chat_with_gria(prompt, county_name)
+                reply = response.get("reply", "I couldn't process your request.")
+                risk_score = response.get("risk_score")
+                risk_level = response.get("risk_level")
+                st.session_state.gria_messages.append({"role": "assistant", "content": reply})
+            except Exception as e:
+                st.error(f"Chat error: {e}")
+        st.rerun()
+
     st.subheader("🤖 Gria AI Assistant")
 
     chat_container = st.container()

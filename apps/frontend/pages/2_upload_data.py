@@ -2,7 +2,7 @@
 import streamlit as st
 
 from shared.sidebar import render_sidebar
-from components.uploader import render_uploader
+from shared.uploader import render_uploader
 
 st.set_page_config(page_title="Upload Data", page_icon="📤", layout="wide")
 

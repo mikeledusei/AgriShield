@@ -1,9 +1,9 @@
 """Export Agricultural Risk Reports - report generation page."""
 import streamlit as st
 
-from components.api_client import create_report, list_reports, download_report_pdf, predict
+from shared.api_client import create_report, list_reports, download_report_pdf, predict
 from shared.sidebar import render_sidebar
-from components.gauges import risk_gauge
+from shared.gauges import risk_gauge
 
 st.set_page_config(page_title="Regional Overview & Reports", page_icon="📄", layout="wide")
 

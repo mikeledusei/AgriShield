@@ -1,7 +1,7 @@
 """Report management page."""
 import streamlit as st
 
-from components.api_client import create_report, list_reports, download_report_pdf
+from shared.api_client import create_report, list_reports, download_report_pdf
 from shared.sidebar import render_sidebar
 
 st.set_page_config(page_title="Report Manager", page_icon="📑", layout="wide")

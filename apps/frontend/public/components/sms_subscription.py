@@ -1,9 +1,8 @@
-"""SMS subscription for risk alerts."""
+"""SMS subscription for risk alerts (placeholder)."""
 import streamlit as st
-from shared.sidebar import render_sidebar
 
 st.subheader("📱 SMS Alerts Subscription")
-st.write("Get SMS alerts when risk levels change in your county.")
+st.info("📱 **Placeholder / Simulated** — Real SMS integration requires a provider (Africa's Talking, Twilio, etc.)")
 
 county = st.selectbox("Your County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
 phone = st.text_input("Phone Number", placeholder="+254 7XX XXX XXX")
@@ -16,8 +15,9 @@ frequency = st.selectbox("Alert Frequency", [
 
 if st.button("Subscribe", type="primary"):
     if phone:
-        st.success(f"✅ You will receive SMS alerts for {county} at {phone}")
+        st.warning("SMS subscription not yet implemented. This is a UI mockup.")
+        st.info(f"Would subscribe: {phone} for {county} alerts ({frequency})")
     else:
         st.error("Please enter a phone number.")
 
-st.caption("Standard SMS rates may apply. You can unsubscribe anytime.")
+st.caption("**Integration needed**: SMS gateway (Africa's Talking, Twilio, or local provider). Requires backend worker for scheduled alerts.")

@@ -4,6 +4,7 @@ from shared.api_client import get_region_aggregation, predict
 from shared.gauges import risk_gauge, status_card
 from shared.charts import risk_distribution_chart
 from shared.sidebar import render_sidebar
+from shared.constants import KENYAN_REGIONS
 
 st.set_page_config(page_title="Regional", page_icon="🌍", layout="wide")
 render_sidebar()
@@ -11,8 +12,7 @@ render_sidebar()
 st.title("🌍 Regional Overview")
 st.write("Aggregated risk intelligence for Kenyan regions.")
 
-regions = ["Rift Valley", "Eastern", "Central", "Nyanza", "Western", "Coast", "North Eastern"]
-region = st.selectbox("Select Region", regions)
+region = st.selectbox("Select Region", KENYAN_REGIONS)
 
 st.divider()
 
@@ -43,6 +43,7 @@ except Exception as e:
 
 st.divider()
 st.subheader("Regional Risk Breakdown")
+# Sample counties for demo - would come from backend in production
 counties_in_region = ["Turkana", "Kajiado", "Kitui"]
 for c in counties_in_region:
     try:

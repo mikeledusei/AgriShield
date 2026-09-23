@@ -4,6 +4,7 @@ import pandas as pd
 from shared.api_client import get_history, get_batch_predictions
 from shared.charts import risk_score_trend_chart, risk_distribution_chart
 from shared.sidebar import render_sidebar
+from shared.constants import PUBLIC_COUNTIES
 
 st.set_page_config(page_title="Trends", page_icon="📈", layout="wide")
 render_sidebar()
@@ -13,7 +14,7 @@ st.write("Analyze historical agricultural risk trends across all counties.")
 
 col1, col2 = st.columns(2)
 with col1:
-    county = st.selectbox("Select County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
+    county = st.selectbox("Select County", PUBLIC_COUNTIES)
     months = st.slider("Time Range (months)", 1, 60, 12)
 
 with col2:

@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from shared.api_client import create_report, list_reports, download_report_pdf
 from shared.sidebar import render_sidebar
+from shared.constants import PUBLIC_COUNTIES, REPORT_TYPES, REPORT_TYPE_MAP
 
 st.set_page_config(page_title="Reports", page_icon="📑", layout="wide")
 render_sidebar()
@@ -13,11 +14,9 @@ st.write("Generate, manage, and download official agricultural risk reports.")
 st.subheader("1. Generate New Report")
 col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
-    selected_county = st.selectbox("Select Target County",
-        ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
+    selected_county = st.selectbox("Select Target County", PUBLIC_COUNTIES)
 with col2:
-    report_type = st.selectbox("Report Type",
-        ["Crop Yield Risk", "Livestock Forage Risk", "Comprehensive Assessment"])
+    report_type = st.selectbox("Report Type", REPORT_TYPES)
 with col3:
     is_detailed = st.checkbox("Detailed View", value=True)
 
@@ -33,21 +32,14 @@ if st.button("Generate Report", type="primary"):
 
 st.divider()
 st.subheader("2. Report Library")
-filter_choice = st.selectbox("Filter by type", ["All", "Crop Yield Risk", "Livestock Forage Risk", "Comprehensive Assessment"])
+filter_choice = st.selectbox("Filter by type", ["All"] + REPORT_TYPES)
 
 try:
-    reports_data = list_reports()
+    rt = REPORT_TYPE_MAP.get(filter_choice) if filter_choice != "All" else None
+    reports_data = list_reports(report_type=rt)
     reports_list = reports_data.get("reports", []) if reports_data else []
 
     if reports_list:
-        if filter_choice != "All":
-            type_map = {
-                "Crop Yield Risk": "crop",
-                "Livestock Forage Risk": "livestock",
-                "Comprehensive Assessment": "comprehensive",
-            }
-            reports_list = [r for r in reports_list if r.get("report_type") == type_map.get(filter_choice)]
-
         st.dataframe(pd.DataFrame(reports_list), use_container_width=True)
 
         st.subheader("3. Download PDF")

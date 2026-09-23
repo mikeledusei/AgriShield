@@ -1,10 +1,10 @@
 """Compare counties side by side."""
 import streamlit as st
 
-from components.api_client import compare_counties
+from shared.api_client import compare_counties
 from shared.sidebar import render_sidebar
-from components.charts import county_comparison_chart
-from components.gauges import risk_gauge, metric_row
+from shared.charts import county_comparison_chart
+from shared.gauges import risk_gauge, metric_row
 
 st.set_page_config(page_title="Compare Counties", page_icon="⚖️", layout="wide")
 

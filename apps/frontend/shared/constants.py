@@ -1,17 +1,7 @@
-"""Map All Counties — government comprehensive map view."""
-import streamlit as st
-from shared.api_client import predict
-from shared.map_renderer import create_risk_map
-from shared.sidebar import render_sidebar
-
-st.set_page_config(page_title="Map — All Counties", page_icon="🗺️", layout="wide")
-render_sidebar()
-
-st.title("🗺️ All Counties Risk Map")
-st.write("Comprehensive spatial view of all Kenyan counties with real-time risk data.")
+"""Shared constants for AgriShield frontend."""
 
 # Kenyan counties with approximate coordinates
-COUNTIES = [
+KENYAN_COUNTIES = [
     {"name": "Turkana", "lat": 3.1167, "lon": 35.6000},
     {"name": "Kajiado", "lat": -1.8523, "lon": 36.7768},
     {"name": "Uasin Gishu", "lat": 0.5143, "lon": 35.2698},
@@ -38,7 +28,6 @@ COUNTIES = [
     {"name": "Murang'a", "lat": -0.7167, "lon": 37.1500},
     {"name": "Kiambu", "lat": -1.1667, "lon": 36.8333},
     {"name": "Nairobi", "lat": -1.2921, "lon": 36.8219},
-    {"name": "Kajiado", "lat": -1.8523, "lon": 36.7768},
     {"name": "Narok", "lat": -1.0833, "lon": 35.8667},
     {"name": "Bomet", "lat": -0.7833, "lon": 35.3500},
     {"name": "Kericho", "lat": -0.3667, "lon": 35.2833},
@@ -60,31 +49,33 @@ COUNTIES = [
     {"name": "Kwale", "lat": -4.1833, "lon": 39.4500},
 ]
 
-focus = st.radio("Risk Focus", ["crops", "livestock"], horizontal=True)
+# Short list for quick selectors
+PUBLIC_COUNTIES = [
+    "Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi",
+    "Meru", "Kisumu", "Kitui", "Machakos", "Makueni",
+    "Bungoma", "Kakamega", "Nandi", "Siaya", "Trans Nzoia",
+]
 
-county_map_data = []
-errors = []
-with st.spinner("Fetching all county predictions..."):
-    for c in COUNTIES:
-        try:
-            data = predict(c["name"], focus)
-            risk_level = str(data.get("risk_level", "UNKNOWN")).upper()
-            risk_score = data.get("risk_score", "N/A")
-        except Exception as e:
-            errors.append(f"{c['name']}: {e}")
-            risk_level = "UNKNOWN"
-            risk_score = "N/A"
-        county_map_data.append({
-            "county": c["name"],
-            "lat": c["lat"],
-            "lon": c["lon"],
-            "risk_level": risk_level,
-            "risk_score": risk_score,
-        })
+# Risk level thresholds
+RISK_THRESHOLDS = {"CRITICAL": 75, "HIGH": 50, "MODERATE": 25, "SAFE": 0}
 
-if errors:
-    with st.expander("⚠️ Some counties could not be loaded"):
-        for err in errors:
-            st.caption(err)
+RISK_COLORS = {
+    "CRITICAL": "#d32f2f",
+    "HIGH": "#f57c00",
+    "MODERATE": "#fbc02d",
+    "SAFE": "#2e7d32",
+    "UNKNOWN": "#616161",
+}
 
-create_risk_map(county_map_data)
+# Report types
+REPORT_TYPES = ["Crop Yield Risk", "Livestock Forage Risk", "Comprehensive Assessment"]
+REPORT_TYPE_MAP = {
+    "Crop Yield Risk": "crop",
+    "Livestock Forage Risk": "livestock",
+    "Comprehensive Assessment": "comprehensive",
+}
+
+# Kenyan regions
+KENYAN_REGIONS = [
+    "Rift Valley", "Eastern", "Central", "Nyanza", "Western", "Coast", "North Eastern"
+]

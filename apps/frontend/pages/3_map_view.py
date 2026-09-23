@@ -1,9 +1,9 @@
 """County risk map page with live predictions."""
 import streamlit as st
 
-from components.api_client import predict
+from shared.api_client import predict
 from shared.sidebar import render_sidebar
-from components.map import create_risk_map
+from shared.map_renderer import create_risk_map
 
 st.set_page_config(page_title="County Risk Map", page_icon="🗺️", layout="wide")
 

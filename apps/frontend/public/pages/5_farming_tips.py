@@ -38,7 +38,7 @@ for crop, tip in crop_tips:
 st.divider()
 
 st.subheader("⚠️ Risk-Based Recommendations")
-st.markdown("""
+st.markdown(f"""
 - **SAFE**: Normal operations. Continue regular farming practices.
 - **MODERATE**: Monitor weather forecasts. Reduce irrigation water usage. Check storage facilities.
 - **HIGH**: Implement drought mitigation measures. Consider crop insurance. Reduce livestock stocking density.

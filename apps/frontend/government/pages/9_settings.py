@@ -7,6 +7,7 @@ render_sidebar()
 
 st.title("⚙️ Government Settings")
 st.write("Configure government portal settings and preferences.")
+st.caption("⚠️ Settings are stored in session state only and do not persist across restarts.")
 
 st.divider()
 
@@ -41,5 +42,15 @@ Manage agricultural risk intelligence for county officials and national governme
 - **Models:** XGBoost (agri-pred-v1)
 """)
 
-if st.button("Save Settings", type="primary"):
-    st.success("✅ Settings saved successfully!")
+if st.button("Save Settings (Session Only)", type="primary"):
+    st.session_state["settings"] = {
+        "app_name": app_name,
+        "language": language,
+        "theme": theme,
+        "email_notifications": email_notifications,
+        "sms_alerts": sms_alerts,
+        "critical_only": critical_only,
+        "refresh_interval": refresh_interval,
+        "default_region": default_region,
+    }
+    st.success("✅ Settings saved to session!")
