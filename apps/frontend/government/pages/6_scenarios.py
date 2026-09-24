@@ -1,9 +1,8 @@
 """Scenarios — government scenario planning."""
 import streamlit as st
-from shared.api_client import scenario_analysis
+from shared.api_client import scenario_analysis, get_available_counties
 from shared.gauges import risk_gauge, status_card
 from shared.sidebar import render_sidebar
-from shared.constants import PUBLIC_COUNTIES
 
 st.set_page_config(page_title="Scenarios", page_icon="🎛️", layout="wide")
 render_sidebar()
@@ -11,7 +10,14 @@ render_sidebar()
 st.title("🎛️ Government Scenario Planning")
 st.write("Model 'what-if' scenarios for policy planning and resource allocation.")
 
-county = st.selectbox("Select County", PUBLIC_COUNTIES)
+# Fetch available counties
+try:
+    county_options = get_available_counties()
+except Exception:
+    from shared.constants import PUBLIC_COUNTIES
+    county_options = PUBLIC_COUNTIES
+
+county = st.selectbox("Select County", county_options)
 
 st.subheader("Adjust Parameters")
 col1, col2, col3 = st.columns(3)

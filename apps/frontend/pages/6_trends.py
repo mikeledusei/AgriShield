@@ -1,7 +1,7 @@
 """Historical trends page."""
 import streamlit as st
 
-from shared.api_client import get_history, get_batch_predictions
+from shared.api_client import get_history, get_batch_predictions, get_available_counties
 from shared.sidebar import render_sidebar
 from shared.charts import risk_score_trend_chart, risk_distribution_chart
 from shared.gauges import risk_gauge
@@ -12,7 +12,13 @@ render_sidebar()
 st.title("📈 Historical Risk Trends")
 st.write("Track how agricultural risk has changed over time.")
 
-county = st.selectbox("Select County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
+# Fetch available counties from backend
+try:
+    county_options = get_available_counties()
+except Exception:
+    county_options = ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"]
+
+county = st.selectbox("Select County", county_options)
 months = st.slider("Time Range (months)", 1, 60, 12)
 
 if st.button("Load Trends", type="primary", use_container_width=True):

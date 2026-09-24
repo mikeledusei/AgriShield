@@ -1,22 +1,23 @@
-"""Voice input — speech-to-text for hands-free interaction (placeholder)."""
+"""Voice input component — requires Web Speech API integration (placeholder)."""
 import streamlit as st
 
 st.subheader("🎤 Voice Input")
-st.info("🎤 **Placeholder / Simulated** — Real voice input requires browser SpeechRecognition API integration.")
+st.info("🎤 **Placeholder** — Real voice input requires browser Web Speech API integration via a custom Streamlit component.")
 
-col1, col2 = st.columns([1, 1])
-with col1:
-    if st.button("🎤 Start Listening", type="primary"):
-        st.warning("Voice input not implemented. Use keyboard input below instead.")
-with col2:
-    if st.button("🔇 Stop", type="secondary"):
-        st.info("Stopped.")
-
-st.divider()
 st.markdown("""
-### Implementation Notes
-- **Real implementation** would use Web Speech API (`window.SpeechRecognition`) via Streamlit custom component
-- **Current workaround**: Use the text chat on "Ask Gria" page
-- **Required**: HTTPS origin for microphone access in browsers
-- **Backend**: Could integrate with Whisper API or similar for server-side transcription
+### Current Limitations
+- **Streamlit native** does not support microphone access
+- **Real implementation** would require a custom component using `window.SpeechRecognition`
+- **HTTPS required** for microphone access in browsers
+
+### Workaround
+Use the text chat on the **Ask Gria** page for now.
+
+### Future Integration
+- Custom component with Web Speech API
+- Server-side transcription via Whisper API
+- Audio recording + upload to backend
 """)
+
+if st.button("🎤 Start Listening (Not Implemented)", disabled=True):
+    pass

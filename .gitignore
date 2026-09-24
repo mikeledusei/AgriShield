@@ -19,11 +19,13 @@
 .env.staging
 apps/backend/.env
 apps/frontend/.env
+.streamlit
 
 # NVIDIA and API keys (in case accidentally saved as separate files)
 *.key
 *.pem
 secrets.json
+secrets.toml
 credentials.json
 
 

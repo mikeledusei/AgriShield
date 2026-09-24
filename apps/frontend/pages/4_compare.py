@@ -1,7 +1,7 @@
 """Compare counties side by side."""
 import streamlit as st
 
-from shared.api_client import compare_counties
+from shared.api_client import compare_counties, get_available_counties
 from shared.sidebar import render_sidebar
 from shared.charts import county_comparison_chart
 from shared.gauges import risk_gauge, metric_row
@@ -12,13 +12,17 @@ render_sidebar()
 st.title("⚖️ County Comparison")
 st.write("Compare risk levels across multiple Kenyan counties.")
 
-county_options = ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi",
-                  "Meru", "Kisumu", "Kitui", "Machakos", "Makueni"]
+# Fetch available counties from backend
+try:
+    county_options = get_available_counties()
+except Exception:
+    county_options = ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi",
+                      "Meru", "Kisumu", "Kitui", "Machakos", "Makueni"]
 
 selected = st.multiselect(
     "Select counties to compare (2–10)",
     county_options,
-    default=["Turkana", "Nakuru"],
+    default=["Turkana", "Nakuru"] if "Turkana" in county_options and "Nakuru" in county_options else county_options[:2],
     max_selections=10,
 )
 

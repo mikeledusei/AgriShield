@@ -1,5 +1,6 @@
 """Upload Photo — satellite/field photo upload for NDVI estimation."""
 import streamlit as st
+
 from shared.sidebar import render_sidebar
 from shared.api_client import upload_and_analyze
 from shared.gauges import risk_gauge

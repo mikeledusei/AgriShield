@@ -58,6 +58,32 @@ for title, desc in features:
 
 st.divider()
 
+st.subheader("Team Members")
+team = [
+    ("Edusei Mikel Lisamba", "ST01/0149/2025", "Team Lead, ML/AI Architect, Backend Lead"),
+    ("David Livingstone", "ST01/0111/2025", "Data Pipeline Lead"),
+    ("Zoe Agumbi", "ST01/50585/2024", "Frontend Lead"),
+]
+for name, reg, role in team:
+    st.markdown(f"- **{name}** ({reg}) — {role}")
+
+st.divider()
+
+st.subheader("Institution")
+st.markdown("**Open University of Kenya (OUK)**")
+
+st.divider()
+
+st.subheader("Supervisor")
+st.markdown("**Dr. Irene Sitawa**")
+
+st.divider()
+
+st.subheader("Project")
+st.markdown("**Data Science OUK Capstone Project 2.2**")
+
+st.divider()
+
 st.subheader("System Status")
 health = check_health()
 if health:

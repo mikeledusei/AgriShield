@@ -1,8 +1,8 @@
 """Risk dashboard page — single-county prediction."""
 import streamlit as st
 
-from shared.api_client import predict
-from shared.sidebar import render_sidebar
+from shared.api_client import predict, get_available_counties
+from shared.sidebar import render_sidebar, get_quick_county
 from shared.gauges import risk_gauge
 from shared.chat import render_chat
 
@@ -16,9 +16,18 @@ render_sidebar()
 
 st.title("🌾 AgriShield: Agricultural Risk Intelligence")
 
+# Fetch available counties from backend
+try:
+    county_options = get_available_counties()
+except Exception:
+    from shared.constants import PUBLIC_COUNTIES
+    county_options = PUBLIC_COUNTIES
+
+default_county = get_quick_county()
 selected_county = st.selectbox(
     "Select County",
-    ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"],
+    county_options,
+    index=county_options.index(default_county) if default_county in county_options else 0,
 )
 focus_area = st.radio("Select Focus", ["crops", "livestock"], horizontal=True)
 

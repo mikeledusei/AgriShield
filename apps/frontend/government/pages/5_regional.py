@@ -43,8 +43,13 @@ except Exception as e:
 
 st.divider()
 st.subheader("Regional Risk Breakdown")
-# Sample counties for demo - would come from backend in production
-counties_in_region = ["Turkana", "Kajiado", "Kitui"]
+# Get counties in this region from backend
+try:
+    result = get_region_aggregation(region)
+    counties_in_region = [c["county_name"] for c in result.get("counties", [])]
+except Exception:
+    counties_in_region = ["Turkana", "Kajiado", "Kitui"]
+
 for c in counties_in_region:
     try:
         data = predict(c)

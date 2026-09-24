@@ -1,9 +1,9 @@
 """Home — public landing page with quick overview and featured content."""
 import streamlit as st
 
-from shared.api_client import check_health, predict
+from shared.api_client import check_health, predict, get_available_counties
 from shared.gauges import risk_gauge
-from shared.sidebar import render_sidebar
+from shared.sidebar import render_sidebar, get_quick_county
 from shared.constants import PUBLIC_COUNTIES, RISK_THRESHOLDS
 
 st.set_page_config(page_title="Home", page_icon="🏠", layout="wide")
@@ -23,7 +23,19 @@ st.divider()
 col1, col2 = st.columns(2)
 with col1:
     st.subheader("🗺️ Featured County Risk")
-    county = st.selectbox("Select a county", PUBLIC_COUNTIES)
+    
+    # Get available counties from backend
+    try:
+        county_options = get_available_counties()
+    except Exception:
+        county_options = PUBLIC_COUNTIES
+    
+    default_county = get_quick_county()
+    county = st.selectbox(
+        "Select a county", 
+        county_options,
+        index=county_options.index(default_county) if default_county in county_options else 0
+    )
     focus = st.radio("Focus", ["crops", "livestock"], horizontal=True, key="home_focus")
     try:
         data = predict(county, focus)

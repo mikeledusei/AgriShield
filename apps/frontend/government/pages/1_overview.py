@@ -42,23 +42,32 @@ except Exception as e:
 
 st.divider()
 st.subheader("🗺️ All Counties Map")
-with st.spinner("Loading map..."):
+try:
+    batch = get_batch_predictions()
+    counties = batch.get("counties", [])
     counties_data = []
-    for c in KENYAN_COUNTIES[:20]:  # Limit for performance
-        try:
-            data = predict(c["name"])
-            counties_data.append({
-                "name": c["name"], "lat": c["lat"], "lon": c["lon"],
-                "risk_level": data.get("risk_level", "UNKNOWN"),
-                "risk_score": data.get("risk_score", 0),
-            })
-        except Exception:
-            pass
-
-if counties_data:
-    create_risk_map(counties_data)
-else:
-    st.warning("Map data unavailable.")
+    for c in counties:
+        counties_data.append({
+            "name": c["county_name"],
+            "lat": 0,  # Will be filled from constants
+            "lon": 0,
+            "risk_level": c.get("risk_level", "UNKNOWN"),
+            "risk_score": c.get("risk_score", 0),
+        })
+    
+    # Add coordinates from constants
+    from shared.constants import KENYAN_COUNTIES
+    coord_map = {c["name"]: (c["lat"], c["lon"]) for c in KENYAN_COUNTIES}
+    for c in counties_data:
+        if c["name"] in coord_map:
+            c["lat"], c["lon"] = coord_map[c["name"]]
+    
+    if counties_data:
+        create_risk_map(counties_data)
+    else:
+        st.warning("Map data unavailable.")
+except Exception as e:
+    st.error(f"Could not load map: {e}")
 
 st.divider()
 st.subheader("📋 Recent Reports")

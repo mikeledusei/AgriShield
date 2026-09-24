@@ -3,7 +3,7 @@ import os
 import requests
 import streamlit as st
 
-BACKEND_URL = os.getenv("BACKEND_URL", "https://agrishield-dnao.onrender.com")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8000")
 try:
     import streamlit as st
     BACKEND_URL = st.secrets.get("BACKEND_URL", BACKEND_URL)
@@ -94,6 +94,12 @@ def get_history(county_name: str, months: int = 12) -> dict:
 
 def get_batch_predictions() -> dict:
     resp = _request("GET", "/api/v1/predictions/batch")
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_available_counties() -> list[str]:
+    resp = _request("GET", "/api/v1/predictions/counties")
     resp.raise_for_status()
     return resp.json()
 

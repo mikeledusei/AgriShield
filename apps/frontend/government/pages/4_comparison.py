@@ -1,10 +1,9 @@
 """Comparison — government county comparison tool."""
 import streamlit as st
-from shared.api_client import compare_counties
+from shared.api_client import compare_counties, get_available_counties
 from shared.charts import county_comparison_chart
 from shared.gauges import risk_gauge, metric_row
 from shared.sidebar import render_sidebar
-from shared.constants import KENYAN_COUNTIES
 
 st.set_page_config(page_title="Comparison", page_icon="⚖️", layout="wide")
 render_sidebar()
@@ -12,12 +11,17 @@ render_sidebar()
 st.title("⚖️ Government County Comparison")
 st.write("Compare risk levels and statistics across multiple counties for resource allocation.")
 
-county_options = [c["name"] for c in KENYAN_COUNTIES]
+# Fetch available counties from backend
+try:
+    county_options = get_available_counties()
+except Exception:
+    from shared.constants import KENYAN_COUNTIES
+    county_options = [c["name"] for c in KENYAN_COUNTIES]
 
 selected = st.multiselect(
     "Select counties to compare (2–10)",
     county_options,
-    default=["Turkana", "Nakuru"],
+    default=[c for c in ["Turkana", "Nakuru"] if c in county_options][:2],
     max_selections=10,
 )
 

@@ -1,10 +1,10 @@
 """My County — personal county risk dashboard for public users."""
 import streamlit as st
 
-from shared.api_client import predict, get_history
+from shared.api_client import predict, get_history, get_available_counties
 from shared.gauges import risk_gauge
 from shared.charts import risk_score_trend_chart
-from shared.sidebar import render_sidebar
+from shared.sidebar import render_sidebar, get_quick_county
 from shared.constants import PUBLIC_COUNTIES
 
 st.set_page_config(page_title="My County", page_icon="🏘️", layout="wide")
@@ -13,7 +13,18 @@ render_sidebar()
 st.title("🏘️ My County")
 st.write("View your county's current risk level and historical trends.")
 
-county = st.selectbox("Select Your County", PUBLIC_COUNTIES)
+# Get available counties
+try:
+    county_options = get_available_counties()
+except Exception:
+    county_options = PUBLIC_COUNTIES
+
+default_county = get_quick_county()
+county = st.selectbox(
+    "Select Your County", 
+    county_options,
+    index=county_options.index(default_county) if default_county in county_options else 0
+)
 focus = st.radio("Risk Focus", ["crops", "livestock"], horizontal=True)
 
 st.divider()

@@ -1,7 +1,7 @@
 """Scenario planning - what-if analysis."""
 import streamlit as st
 
-from shared.api_client import scenario_analysis
+from shared.api_client import scenario_analysis, get_available_counties
 from shared.sidebar import render_sidebar
 from shared.gauges import risk_gauge, status_card
 
@@ -11,7 +11,13 @@ render_sidebar()
 st.title("🎛️ Scenario Planning")
 st.write("Model 'what-if' scenarios by adjusting environmental factors.")
 
-county = st.selectbox("Select County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
+# Fetch available counties from backend
+try:
+    county_options = get_available_counties()
+except Exception:
+    county_options = ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"]
+
+county = st.selectbox("Select County", county_options)
 
 st.subheader("Adjust Parameters")
 col1, col2, col3 = st.columns(3)

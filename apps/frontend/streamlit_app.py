@@ -10,6 +10,10 @@ st.set_page_config(
     layout="wide",
 )
 
+# Set app type for sidebar navigation
+if "app_type" not in st.session_state:
+    st.session_state["app_type"] = "main"
+
 render_sidebar()
 
 st.title("🌾 Welcome to AgriShield")
@@ -32,17 +36,8 @@ across Kenyan counties.
 
 st.divider()
 
-st.sidebar.title("📌 System Status")
-health = check_health()
-if health and health.get("status") == "healthy":
-    st.sidebar.success("🟢 API Status: Online")
-elif health:
-    st.sidebar.warning("🟡 API Status: Degraded")
-else:
-    st.sidebar.error("🔴 API Status: Cold Starting / Offline")
-st.sidebar.info("Note: Render free tier may take 30–60s on first load.")
+# System status is now in the sidebar via render_sidebar()
 
-st.divider()
 root = get_root()
 if root:
     st.caption(f"Powered by AgriShield API v{root.get('version', '1.0.0')} | Backend Host: Render")

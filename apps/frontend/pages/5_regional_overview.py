@@ -1,7 +1,7 @@
 """Export Agricultural Risk Reports - report generation page."""
 import streamlit as st
 
-from shared.api_client import create_report, list_reports, download_report_pdf, predict
+from shared.api_client import create_report, list_reports, download_report_pdf, predict, get_available_counties
 from shared.sidebar import render_sidebar
 from shared.gauges import risk_gauge
 
@@ -16,9 +16,14 @@ st.subheader("1. Generate New County Report")
 
 col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
+    # Fetch available counties from backend
+    try:
+        county_options = get_available_counties()
+    except Exception:
+        county_options = ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"]
     selected_county = st.selectbox(
         "Select Target County",
-        ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"],
+        county_options,
     )
 with col2:
     report_type = st.selectbox(

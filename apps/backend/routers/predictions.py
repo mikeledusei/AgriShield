@@ -99,3 +99,11 @@ def scenario_analysis(req: sch.ScenarioRequest, db: Session = Depends(get_db),
             db, req.county_name, req.rainfall_change_pct, req.temp_change_c, req.ndvi_shock))
     except CountyNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/counties", response_model=list[str])
+def list_counties(db: Session = Depends(get_db),
+                  user: dict = Depends(get_current_user)):
+    """Return list of all available counties in the database."""
+    counties = db.query(models.County).order_by(models.County.name).all()
+    return [c.name for c in counties]

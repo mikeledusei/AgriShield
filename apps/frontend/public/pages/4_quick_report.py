@@ -1,9 +1,9 @@
 """Quick Report — generate a fast county risk report for public users."""
 import streamlit as st
 
-from shared.api_client import predict, create_report, download_report_pdf
+from shared.api_client import predict, create_report, download_report_pdf, get_available_counties
 from shared.gauges import risk_gauge
-from shared.sidebar import render_sidebar
+from shared.sidebar import render_sidebar, get_quick_county
 from shared.constants import PUBLIC_COUNTIES, REPORT_TYPES
 
 st.set_page_config(page_title="Quick Report", page_icon="📋", layout="wide")
@@ -12,7 +12,18 @@ render_sidebar()
 st.title("📋 Quick Report")
 st.write("Get a quick risk assessment for any Kenyan county. Generate and download a PDF report instantly.")
 
-county = st.selectbox("Select County", PUBLIC_COUNTIES)
+# Get available counties
+try:
+    county_options = get_available_counties()
+except Exception:
+    county_options = PUBLIC_COUNTIES
+
+default_county = get_quick_county()
+county = st.selectbox(
+    "Select County", 
+    county_options,
+    index=county_options.index(default_county) if default_county in county_options else 0
+)
 report_type = st.selectbox("Report Type", REPORT_TYPES)
 detailed = st.checkbox("Detailed View", value=True)
 

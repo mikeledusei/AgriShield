@@ -1,9 +1,10 @@
 """County risk map page with live predictions."""
 import streamlit as st
 
-from shared.api_client import predict
+from shared.api_client import predict, get_available_counties
 from shared.sidebar import render_sidebar
 from shared.map_renderer import create_risk_map
+from shared.constants import KENYAN_COUNTIES
 
 st.set_page_config(page_title="County Risk Map", page_icon="🗺️", layout="wide")
 
@@ -12,13 +13,18 @@ render_sidebar()
 st.title("🗺️ Kenya Agricultural Risk Map")
 st.write("Interactive spatial visualization of crop yield and livestock forage risks across target counties.")
 
-COUNTIES = [
-    {"name": "Turkana", "lat": 3.1167, "lon": 35.6000},
-    {"name": "Kajiado", "lat": -1.8523, "lon": 36.7768},
-    {"name": "Uasin Gishu", "lat": 0.5143, "lon": 35.2698},
-    {"name": "Nakuru", "lat": -0.3031, "lon": 36.0800},
-    {"name": "Kilifi", "lat": -3.5107, "lon": 39.9093},
-]
+# Fetch available counties from backend, filter KENYAN_COUNTIES to match
+try:
+    available_counties = set(get_available_counties())
+    COUNTIES = [c for c in KENYAN_COUNTIES if c["name"] in available_counties]
+except Exception:
+    COUNTIES = [
+        {"name": "Turkana", "lat": 3.1167, "lon": 35.6000},
+        {"name": "Kajiado", "lat": -1.8523, "lon": 36.7768},
+        {"name": "Uasin Gishu", "lat": 0.5143, "lon": 35.2698},
+        {"name": "Nakuru", "lat": -0.3031, "lon": 36.0800},
+        {"name": "Kilifi", "lat": -3.5107, "lon": 39.9093},
+    ]
 
 focus_area = st.radio("Select Risk Focus", ["crops", "livestock"], horizontal=True)
 

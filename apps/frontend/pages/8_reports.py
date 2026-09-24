@@ -1,7 +1,7 @@
 """Report management page."""
 import streamlit as st
 
-from shared.api_client import create_report, list_reports, download_report_pdf
+from shared.api_client import create_report, list_reports, download_report_pdf, get_available_counties
 from shared.sidebar import render_sidebar
 
 st.set_page_config(page_title="Report Manager", page_icon="📑", layout="wide")
@@ -13,9 +13,15 @@ st.write("Manage and download agricultural risk reports.")
 
 st.subheader("1. Generate New Report")
 
+# Fetch available counties from backend
+try:
+    county_options = get_available_counties()
+except Exception:
+    county_options = ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"]
+
 col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
-    selected_county = st.selectbox("Select County", ["Turkana", "Kajiado", "Uasin Gishu", "Nakuru", "Kilifi"])
+    selected_county = st.selectbox("Select County", county_options)
 with col2:
     report_type = st.selectbox("Report Type", ["Crop Yield Risk", "Livestock Forage Risk", "Comprehensive Assessment"])
 with col3:

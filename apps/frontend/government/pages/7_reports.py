@@ -1,7 +1,7 @@
 """Reports — government report management."""
 import streamlit as st
 import pandas as pd
-from shared.api_client import create_report, list_reports, download_report_pdf
+from shared.api_client import create_report, list_reports, download_report_pdf, get_available_counties
 from shared.sidebar import render_sidebar
 from shared.constants import PUBLIC_COUNTIES, REPORT_TYPES, REPORT_TYPE_MAP
 
@@ -12,9 +12,16 @@ st.title("📑 Government Report Management")
 st.write("Generate, manage, and download official agricultural risk reports.")
 
 st.subheader("1. Generate New Report")
+
+# Fetch available counties
+try:
+    county_options = get_available_counties()
+except Exception:
+    county_options = PUBLIC_COUNTIES
+
 col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
-    selected_county = st.selectbox("Select Target County", PUBLIC_COUNTIES)
+    selected_county = st.selectbox("Select Target County", county_options)
 with col2:
     report_type = st.selectbox("Report Type", REPORT_TYPES)
 with col3:

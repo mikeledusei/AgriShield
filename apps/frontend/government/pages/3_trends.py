@@ -1,10 +1,9 @@
 """Trends — government historical analysis."""
 import streamlit as st
 import pandas as pd
-from shared.api_client import get_history, get_batch_predictions
+from shared.api_client import get_history, get_batch_predictions, get_available_counties
 from shared.charts import risk_score_trend_chart, risk_distribution_chart
 from shared.sidebar import render_sidebar
-from shared.constants import PUBLIC_COUNTIES
 
 st.set_page_config(page_title="Trends", page_icon="📈", layout="wide")
 render_sidebar()
@@ -12,9 +11,16 @@ render_sidebar()
 st.title("📈 Government Trends Analysis")
 st.write("Analyze historical agricultural risk trends across all counties.")
 
+# Fetch available counties
+try:
+    county_options = get_available_counties()
+except Exception:
+    from shared.constants import PUBLIC_COUNTIES
+    county_options = PUBLIC_COUNTIES
+
 col1, col2 = st.columns(2)
 with col1:
-    county = st.selectbox("Select County", PUBLIC_COUNTIES)
+    county = st.selectbox("Select County", county_options)
     months = st.slider("Time Range (months)", 1, 60, 12)
 
 with col2:
