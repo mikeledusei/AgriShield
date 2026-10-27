@@ -47,13 +47,10 @@ data_pipeline/data/geospatial/
 *.sqlite
 *.db
 
-# Exception: Keep small config/sample files and 2015-2025 new_data / pipeline datasets tracked
+# Exception: Keep small config/sample files and 2015-2025 raw datasets in data_pipeline/data/ tracked
 !data_pipeline/data/.gitkeep
-!data_pipeline/new_data/
-!data_pipeline/new_data/**
 !data_pipeline/data/
 !data_pipeline/data/**
-!apps/backend/ml_artifacts/*.csv
 !apps/frontend/assets/kenya_counties.geojson
 
 # Note: The kenya_counties.geojson is a small map asset needed
