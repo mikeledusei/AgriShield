@@ -337,24 +337,40 @@ class PredictionEngine:
     def _get_county(self, db: Optional[Session], name: str) -> models.County:
         canonical = normalize_county_name(name)
         if db is not None:
-            county = (
-                db.query(models.County)
-                .filter(models.County.name.ilike(canonical))
-                .first()
-            )
-            if county is None and canonical != name.strip():
-                county = (
-                    db.query(models.County)
-                    .filter(models.County.name.ilike(name.strip()))
-                    .first()
-                )
-            if county is None and canonical in COUNTY_METADATA:
-                ensure_counties_seeded(db)
+            try:
                 county = (
                     db.query(models.County)
                     .filter(models.County.name.ilike(canonical))
                     .first()
                 )
+            except Exception:
+                db.rollback()
+                ensure_counties_seeded(db)
+                county = None
+
+            if county is None and canonical != name.strip():
+                try:
+                    county = (
+                        db.query(models.County)
+                        .filter(models.County.name.ilike(name.strip()))
+                        .first()
+                    )
+                except Exception:
+                    db.rollback()
+                    county = None
+
+            if county is None and canonical in COUNTY_METADATA:
+                ensure_counties_seeded(db)
+                try:
+                    county = (
+                        db.query(models.County)
+                        .filter(models.County.name.ilike(canonical))
+                        .first()
+                    )
+                except Exception:
+                    db.rollback()
+                    county = None
+
             if county is not None:
                 return county
 
