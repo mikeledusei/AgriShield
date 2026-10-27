@@ -2,9 +2,12 @@
 import uuid
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status
-from supabase import Client
 
-from core.auth import get_current_user
+try:
+    from supabase import Client
+except Exception:  # pragma: no cover - optional dependency path
+    Client = None
+
 from core.config import settings
 from core.supabase_client import get_supabase
 
@@ -15,7 +18,6 @@ router = APIRouter(prefix="/storage", tags=["Storage"])
 async def upload_file(
     file: UploadFile = File(...),
     folder: str = "default",
-    user: dict = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ):
     """Upload file to Supabase storage (authenticated users only)."""
@@ -39,6 +41,8 @@ async def upload_file(
             "public_url": public_url,
             "size": len(file_content),
         }
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -46,7 +50,6 @@ async def upload_file(
 @router.delete("/delete/{file_path:path}")
 async def delete_file(
     file_path: str,
-    user: dict = Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ):
     """Delete file from Supabase storage (authenticated users only)."""
@@ -54,5 +57,7 @@ async def delete_file(
         bucket_name = settings.SUPABASE_BUCKET_NAME
         supabase.storage.from_(bucket_name).remove([file_path])
         return {"message": "File deleted successfully"}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

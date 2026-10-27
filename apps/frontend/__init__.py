@@ -1,1 +1,0 @@
-"""AgriShield frontend entry point."""

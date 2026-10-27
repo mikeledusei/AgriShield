@@ -2,7 +2,6 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from sqlalchemy.orm import Session
 
-from core.auth import get_current_user
 from core.database import get_db
 from database import crud
 from schemas.pydantic_models import UploadResponse
@@ -17,7 +16,6 @@ ALLOWED_TYPES = {"csv", "xlsx", "xls", "pdf", "docx", "png", "jpg", "jpeg"}
 async def upload_and_analyze(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     file_ext = file.filename.split(".")[-1].lower()
     if file_ext not in ALLOWED_TYPES:

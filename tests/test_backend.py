@@ -77,8 +77,10 @@ def test_schema_validation():
     req = CountyPredictionRequest(county_name="Turkana")
     assert req.focus is None
 
-    chat = GriaChatRequest(message="Test", county_name="Turkana")
+    chat = GriaChatRequest(message="Test", county_name="Turkana", document_context="Rainfall down 18%", document_name="field.pdf")
     assert chat.message == "Test"
+    assert chat.document_context == "Rainfall down 18%"
+    assert chat.document_name == "field.pdf"
 
     resp = PredictionOut(county_name="Turkana", risk_score=50, risk_level="MODERATE",
                            main_driver="Test", recommendation="Test", model_used="rule_based")
@@ -86,6 +88,18 @@ def test_schema_validation():
 
     batch = BatchResponse(generated_at="2026-01-01", county_count=1, counties=[resp])
     assert batch.county_count == 1
+
+    upload = UploadResponse(
+        file_name="field.pdf",
+        file_type="pdf",
+        extracted_data=inp,
+        gria_summary="Parsed PDF successfully",
+        risk_score=45.0,
+        risk_level="MODERATE",
+        document_text="Rainfall down 18%; NDVI 0.41",
+        document_report="Document analysis report generated",
+    )
+    assert upload.document_report.startswith("Document analysis")
 
 
 def test_health_endpoint():

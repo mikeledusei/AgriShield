@@ -7,6 +7,7 @@ gracefully to the rule engine — the API can never crash because of ML files.
 """
 import json
 import logging
+import re
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -237,7 +238,15 @@ class PredictionEngine:
 
     # ----------------------------------------------------------- public API
     def _get_county(self, db: Session, name: str) -> models.County:
-        county = db.query(models.County).filter(models.County.name.ilike(name.strip())).first()
+        raw = (name or "").strip()
+        lookup = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+        if lookup:
+            for county in db.query(models.County).all():
+                if re.sub(r"[^a-z0-9]+", " ", county.name.lower()).strip() == lookup:
+                    return county
+                if re.sub(r"[^a-z0-9]+", " ", county.name.lower()).strip() == lookup.replace(" murang a ", " muranga "):
+                    return county
+        county = db.query(models.County).filter(models.County.name.ilike(raw)).first()
         if county is None:
             raise CountyNotFoundError(f"County '{name}' not found.")
         return county

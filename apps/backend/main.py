@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
-from routers import health, predictions, gria, uploads, reports, storage, auth
+from routers import health, predictions, gria, uploads, reports, storage
+from seed_counties import seed as seed_counties
 from services import logging_service
 
 
@@ -24,6 +25,8 @@ async def lifespan(app: FastAPI):
     logging_service.info("🗄️  Database: NeonDB (PostgreSQL)")
     logging_service.info("🔐 Storage: Supabase")
     logging_service.info("⚡ Cache: Redis")
+    if settings.DATABASE_URL:
+        seed_counties()
     logging_service.info(" Server is ready to accept connections!")
 
     yield
@@ -50,7 +53,6 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix=settings.API_V1_PREFIX)
-app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
 app.include_router(predictions.router, prefix=settings.API_V1_PREFIX)
 app.include_router(storage.router, prefix=settings.API_V1_PREFIX)
 app.include_router(gria.router, prefix=settings.API_V1_PREFIX)

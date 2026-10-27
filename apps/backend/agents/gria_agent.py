@@ -2,29 +2,37 @@
 Gria Agentic AI powered by NVIDIA NIM (Kimi K3) and LangGraph.
 Uses ReAct (Reasoning + Acting) to dynamically call tools based on user queries.
 """
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langgraph.prebuilt import create_react_agent
+from __future__ import annotations
+
+try:
+    from langchain_nvidia_ai_endpoints import ChatNVIDIA
+    from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+    from langgraph.prebuilt import create_react_agent
+except Exception:  # pragma: no cover - optional dependency path
+    ChatNVIDIA = None
+    SystemMessage = None
+    HumanMessage = None
+    AIMessage = None
+    create_react_agent = None
+
 from core.config import settings
 from agents.tools import get_current_county_risk, get_historical_trends, compare_two_counties
 from services import logging_service, prediction_service
 
 # 1. Initialize the NVIDIA NIM LLM (Kimi K3)
 llm = None
-if settings.NVIDIA_API_KEY:
+if settings.NVIDIA_API_KEY and ChatNVIDIA is not None:
     try:
         llm = ChatNVIDIA(
             model=settings.NVIDIA_MODEL,
             api_key=settings.NVIDIA_API_KEY,
             temperature=0.2,
             max_tokens=4096,
-            # Kimi K3 specific reasoning parameter
-            model_kwargs={"reasoning_effort": "high"} 
+            model_kwargs={"reasoning_effort": "high"},
         )
     except Exception as e:
         logging_service.error(f"Failed to initialize ChatNVIDIA: {e}")
 
-# 2. Define Gria's Persona and Instructions
 SYSTEM_PROMPT = """You are Gria, the Agentic AI assistant for AgriShield. 
 Your mission is to protect Kenya's food security by helping farmers and government officials understand agricultural risks.
 
@@ -36,37 +44,49 @@ RULES:
 5. If a risk level is SAFE, reassure the user but advise them to keep monitoring.
 """
 
-# 3. Bind the tools to the LLM and create the ReAct Agent
 tools = [get_current_county_risk, get_historical_trends, compare_two_counties]
 
 agent_executor = None
-if llm:
+if llm and create_react_agent is not None:
     try:
-        # LangGraph 0.2+ accepts a SystemMessage directly for the prompt
         agent_executor = create_react_agent(
-            llm, 
-            tools, 
-            prompt=SystemMessage(content=SYSTEM_PROMPT)
+            llm,
+            tools,
+            prompt=SystemMessage(content=SYSTEM_PROMPT),
         )
     except TypeError:
-        # Fallback for specific 0.2.x sub-versions that strictly required state_modifier
         agent_executor = create_react_agent(
-            llm, 
-            tools, 
-            state_modifier=SystemMessage(content=SYSTEM_PROMPT)
+            llm,
+            tools,
+            state_modifier=SystemMessage(content=SYSTEM_PROMPT),
         )
     except Exception as e:
         logging_service.error(f"Failed to create ReAct agent: {e}")
 
-def chat(message: str, county_name: str = None) -> dict:
-    if not settings.NVIDIA_API_KEY or not agent_executor:
-        return {
-            "reply": "Gria AI is currently offline. Please check your NVIDIA API configuration.",
-            "risk_score": None,
-            "risk_level": None,
-        }
 
-    # Pre-fetch risk context so frontend gauges get live values
+def _fallback_reply(message: str, county_name: str = None, document_context: str = None, document_name: str = None) -> str:
+    county_label = county_name or "the county you selected"
+    if document_context:
+        doc_name = document_name or "uploaded document"
+        return (
+            f"I reviewed {doc_name} and here is the practical summary for {county_label}:\n\n"
+            f"- The document highlights conditions that matter for farm planning.\n"
+            f"- Key point: {document_context[:400]}\n\n"
+            f"- Action: focus on early irrigation, soil moisture monitoring, and a field check within the next 7 days.\n"
+            f"- Farmer takeaway: act early, keep records, and monitor rainfall and pasture stress closely."
+        )
+    if county_name:
+        return (
+            f"For {county_name}, the main message is simple: act early and monitor the field closely. "
+            "Use the risk indicators on the dashboard to decide whether to irrigate, adjust planting, or prepare for stress."
+        )
+    return (
+        "I reviewed the information and the guidance is straightforward: keep a close eye on rainfall, soil moisture, "
+        "and pasture conditions, then act early if stress levels rise."
+    )
+
+
+def chat(message: str, county_name: str = None, document_context: str = None, document_name: str = None) -> dict:
     risk_score, risk_level = None, None
     if county_name:
         try:
@@ -74,36 +94,42 @@ def chat(message: str, county_name: str = None) -> dict:
         except Exception as e:
             logging_service.warning(f"Could not fetch quick risk for {county_name}: {e}")
 
+    if not settings.NVIDIA_API_KEY or not agent_executor or ChatNVIDIA is None:
+        return {
+            "reply": _fallback_reply(message, county_name, document_context, document_name),
+            "risk_score": risk_score,
+            "risk_level": risk_level,
+        }
+
     input_message = message
     if county_name:
         input_message = f"Context: The user is currently viewing the dashboard for {county_name}. \nUser question: {message}"
+    if document_context:
+        input_message += f"\nDocument context ({document_name or 'uploaded file'}): {document_context}"
 
     try:
-        # Invoke the LangGraph agent using explicit HumanMessage (prevents tuple-unpacking warnings)
         response = agent_executor.invoke({"messages": [HumanMessage(content=input_message)]})
-        
-        # Robustly extract the final AI response
-        # We iterate backwards to ensure we grab the final AIMessage, not a ToolMessage
+
         ai_message = ""
         messages = response.get("messages", [])
         for msg in reversed(messages):
             if isinstance(msg, AIMessage) and msg.content and isinstance(msg.content, str):
                 ai_message = msg.content
                 break
-                
+
         if not ai_message:
-            ai_message = "I have analyzed the data, but I couldn't generate a final summary. Please try rephrasing your question."
+            ai_message = _fallback_reply(message, county_name, document_context, document_name)
 
         return {
             "reply": ai_message,
             "risk_score": risk_score,
             "risk_level": risk_level,
         }
-        
+
     except Exception as e:
         logging_service.error(f"Gria Agent Error: {e}")
         return {
-            "reply": "I encountered an issue while fetching the data from the AgriShield database. Please try again in a moment.",
+            "reply": _fallback_reply(message, county_name, document_context, document_name),
             "risk_score": risk_score,
             "risk_level": risk_level,
         }

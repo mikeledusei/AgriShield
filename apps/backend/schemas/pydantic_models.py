@@ -17,6 +17,8 @@ class ModelInput(BaseModel):
 class GriaChatRequest(BaseModel):
     message: str
     county_name: Optional[str] = None
+    document_context: Optional[str] = None
+    document_name: Optional[str] = None
 
 
 class GriaChatResponse(BaseModel):
@@ -33,6 +35,8 @@ class UploadResponse(BaseModel):
     gria_summary: str
     risk_score: float
     risk_level: str
+    document_text: Optional[str] = None
+    document_report: Optional[str] = None
 
 
 # ---------- Reports ----------

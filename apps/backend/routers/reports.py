@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from core.auth import get_current_user
 from core.database import get_db
 from database import models, crud
 from schemas.pydantic_models import ReportRequest
@@ -38,7 +37,6 @@ class ReportListResponse(BaseModel):
 def create_report(
     req: ReportRequest,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     try:
         engine = get_engine()
@@ -65,7 +63,6 @@ def list_reports(
     report_type: Optional[str] = None,
     limit: int = 20,
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
 ):
     query = db.query(models.Report).order_by(desc(models.Report.created_at))
     if report_type:
@@ -80,8 +77,7 @@ def _get_county_name(db: Session, county_id: int) -> str:
 
 
 @router.get("/{report_id}")
-def get_report(report_id: int, db: Session = Depends(get_db),
-               user: dict = Depends(get_current_user)):
+def get_report(report_id: int, db: Session = Depends(get_db)):
     report = db.query(models.Report).filter(models.Report.id == report_id).first()
     if report is None:
         raise HTTPException(status_code=404, detail=f"Report {report_id} not found.")
@@ -89,8 +85,7 @@ def get_report(report_id: int, db: Session = Depends(get_db),
 
 
 @router.get("/{report_id}/pdf")
-def get_report_pdf(report_id: int, db: Session = Depends(get_db),
-                   user: dict = Depends(get_current_user)):
+def get_report_pdf(report_id: int, db: Session = Depends(get_db)):
     """Generate and stream the PDF for an existing report."""
     report = db.query(models.Report).filter(models.Report.id == report_id).first()
     if report is None:

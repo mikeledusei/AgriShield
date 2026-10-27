@@ -102,22 +102,66 @@ def _parse_image(file_bytes: bytes) -> dict:
     ndvi_proxy = round(min(max((green_ratio - 0.30) * 2.0, 0.10), 0.80), 2)
     return {"ndvi_pasture_index": ndvi_proxy}
 
+def _build_document_report(file_name: str, county_name: str, risk_score: float, risk_level: str, extracted: dict, text_snippet: str) -> str:
+    county_label = county_name or "the selected county"
+    score_note = "low risk" if risk_level == "SAFE" else "moderate risk" if risk_level == "MODERATE" else "high risk" if risk_level == "HIGH" else "critical risk"
+    findings = []
+    if extracted.get("rainfall_anomaly_30d") is not None:
+        findings.append(f"Rainfall anomaly is {extracted.get('rainfall_anomaly_30d')}%.")
+    if extracted.get("ndvi_pasture_index") is not None:
+        findings.append(f"Pasture/vegetation index is {extracted.get('ndvi_pasture_index')}.")
+    if extracted.get("temp_max_avg") is not None:
+        findings.append(f"Average maximum temperature is {extracted.get('temp_max_avg')}°C.")
+    if extracted.get("soil_moisture_deficit") is not None:
+        findings.append(f"Soil moisture deficit is {extracted.get('soil_moisture_deficit')}%.")
+
+    if not findings:
+        findings.append("The uploaded file mainly described field conditions without explicit numeric indicators.")
+
+    if text_snippet:
+        excerpt = text_snippet.strip().replace("\n", " ")
+        excerpt = re.sub(r"\s+", " ", excerpt)[:220]
+    else:
+        excerpt = "The document was reviewed using AgriShield field assumptions."
+
+    return (
+        f"Document review for {file_name}:\n"
+        f"- County focus: {county_label}\n"
+        f"- Risk outlook: {risk_score}% ({score_note})\n"
+        f"- Key indicators: {' '.join(findings)}\n"
+        f"- Notes: {excerpt}"
+    )
+
+
 def process(file_name: str, file_ext: str, file_bytes: bytes) -> UploadResponse:
     extracted = {}
     summary = ""
+    document_text = ""
 
     if file_ext in ("csv", "xlsx", "xls"):
         extracted = _parse_tabular(file_bytes, file_ext)
         summary = "Gria read the spreadsheet and mapped its columns to model features."
+        document_text = str(extracted)
     elif file_ext == "pdf":
         extracted = _parse_pdf(file_bytes)
         summary = "Gria extracted text from the PDF and identified agricultural indicators."
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            pages = []
+            for page in pdf.pages:
+                page_text = page.extract_text() or ""
+                if page_text:
+                    pages.append(page_text)
+            document_text = "\n".join(pages)
     elif file_ext == "docx":
         extracted = _parse_word(file_bytes)
         summary = "Gria read the Word document and identified agricultural indicators."
+        document_text = "\n".join(
+            paragraph.text for paragraph in Document(io.BytesIO(file_bytes)).paragraphs if paragraph.text.strip()
+        )
     elif file_ext in ("png", "jpg", "jpeg"):
         extracted = _parse_image(file_bytes)
         summary = "Gria analyzed the image and estimated vegetation greenness. Other indicators use regional defaults."
+        document_text = "Image analysis: vegetation estimate based on color intensity."
     else:
         summary = "Unsupported file structure. Regional defaults were used."
 
@@ -137,6 +181,8 @@ def process(file_name: str, file_ext: str, file_bytes: bytes) -> UploadResponse:
         soil_moisture_deficit=features["soil_moisture_deficit"],
     )
 
+    document_report = _build_document_report(file_name, county_name, score, level, extracted, document_text)
+
     return UploadResponse(
         file_name=file_name,
         file_type=file_ext,
@@ -144,4 +190,6 @@ def process(file_name: str, file_ext: str, file_bytes: bytes) -> UploadResponse:
         gria_summary=summary,
         risk_score=score,
         risk_level=level,
+        document_text=document_text or str(extracted),
+        document_report=document_report,
     )

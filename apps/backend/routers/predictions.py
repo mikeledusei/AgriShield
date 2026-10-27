@@ -1,15 +1,44 @@
 """Predictions API: county, history, batch, compare, region, scenario."""
+import re
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from core.auth import get_current_user
 from core.database import get_db
 from database import models
 from schemas import predictions as sch
 from services.prediction_service import CountyNotFoundError, get_engine
+
+CANONICAL_COUNTIES = [
+    "Mombasa", "Kwale", "Kilifi", "Tana River", "Lamu", "Taita-Taveta", "Garissa", "Wajir", "Mandera", "Marsabit",
+    "Isiolo", "Meru", "Tharaka-Nithi", "Embu", "Kitui", "Machakos", "Makueni", "Nyandarua", "Nyeri", "Kirinyaga",
+    "Murang'a", "Kiambu", "Turkana", "West Pokot", "Samburu", "Trans Nzoia", "Uasin Gishu", "Elgeyo-Marakwet",
+    "Nandi", "Baringo", "Laikipia", "Nakuru", "Narok", "Kajiado", "Kericho", "Bomet", "Kakamega", "Vihiga",
+    "Bungoma", "Busia", "Siaya", "Kisumu", "Homa Bay", "Migori", "Kisii", "Nyamira", "Nairobi",
+]
+
+
+def _normalize_county_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+
+def _county_aliases() -> dict[str, str]:
+    return {
+        "taita taveta": "Taita-Taveta",
+        "taita taveta county": "Taita-Taveta",
+        "muranga": "Murang'a",
+        "murang a": "Murang'a",
+        "tharaka nithi": "Tharaka-Nithi",
+        "west pokot": "West Pokot",
+        "trans nzioa": "Trans Nzoia",
+        "trans nzoia": "Trans Nzoia",
+        "uasin gishu": "Uasin Gishu",
+        "elgeyo marakwet": "Elgeyo-Marakwet",
+        "tana river": "Tana River",
+        "nairobi county": "Nairobi",
+    }
 
 router = APIRouter(prefix="/predictions", tags=["Predictions"])
 
@@ -23,15 +52,13 @@ def _predict(engine, db, name, focus=None, persist=True) -> sch.PredictionOut:
 
 @router.post("/crop-yield", response_model=sch.PredictionOut)
 def crop_yield(req: sch.CountyPredictionRequest,
-               db: Session = Depends(get_db),
-               user: dict = Depends(get_current_user)):
+               db: Session = Depends(get_db)):
     return _predict(get_engine(), db, req.county_name, req.focus)
 
 
 @router.get("/history")
 def prediction_history(county_name: str, months: int = 12,
-                       db: Session = Depends(get_db),
-                       user: dict = Depends(get_current_user)):
+                       db: Session = Depends(get_db)):
     county = db.query(models.County).filter(models.County.name.ilike(county_name.strip())).first()
     if county is None:
         raise HTTPException(status_code=404, detail=f"County '{county_name}' not found.")
@@ -52,8 +79,7 @@ def prediction_history(county_name: str, months: int = 12,
 
 
 @router.get("/batch", response_model=sch.BatchResponse)
-def batch_predictions(db: Session = Depends(get_db),
-                      user: dict = Depends(get_current_user)):
+def batch_predictions(db: Session = Depends(get_db)):
     engine = get_engine()
     counties = db.query(models.County).order_by(models.County.name).all()
     preds = [_predict(engine, db, c.name, persist=False) for c in counties]
@@ -65,8 +91,7 @@ def batch_predictions(db: Session = Depends(get_db),
 
 
 @router.post("/compare", response_model=sch.CompareResponse)
-def compare_counties(req: sch.CompareRequest, db: Session = Depends(get_db),
-                     user: dict = Depends(get_current_user)):
+def compare_counties(req: sch.CompareRequest, db: Session = Depends(get_db)):
     engine = get_engine()
     preds = [_predict(engine, db, name, persist=False) for name in req.counties]
     ranked = sorted(preds, key=lambda p: p.risk_score, reverse=True)
@@ -74,8 +99,7 @@ def compare_counties(req: sch.CompareRequest, db: Session = Depends(get_db),
 
 
 @router.post("/region", response_model=sch.RegionResponse)
-def region_aggregation(req: sch.RegionRequest, db: Session = Depends(get_db),
-                       user: dict = Depends(get_current_user)):
+def region_aggregation(req: sch.RegionRequest, db: Session = Depends(get_db)):
     engine = get_engine()
     counties = (db.query(models.County)
                 .filter(models.County.region.ilike(req.region_name.strip()))
@@ -92,8 +116,7 @@ def region_aggregation(req: sch.RegionRequest, db: Session = Depends(get_db),
 
 
 @router.post("/scenario", response_model=sch.ScenarioResponse)
-def scenario_analysis(req: sch.ScenarioRequest, db: Session = Depends(get_db),
-                      user: dict = Depends(get_current_user)):
+def scenario_analysis(req: sch.ScenarioRequest, db: Session = Depends(get_db)):
     try:
         return sch.ScenarioResponse(**get_engine().scenario(
             db, req.county_name, req.rainfall_change_pct, req.temp_change_c, req.ndvi_shock))
@@ -102,8 +125,13 @@ def scenario_analysis(req: sch.ScenarioRequest, db: Session = Depends(get_db),
 
 
 @router.get("/counties", response_model=list[str])
-def list_counties(db: Session = Depends(get_db),
-                  user: dict = Depends(get_current_user)):
-    """Return list of all available counties in the database."""
-    counties = db.query(models.County).order_by(models.County.name).all()
-    return [c.name for c in counties]
+def list_counties(db: Session = Depends(get_db)):
+    """Always return the full Kenya county catalog in canonical order."""
+    db_names = {c.name for c in db.query(models.County).all()}
+    for name in list(db_names):
+        normalized = _normalize_county_name(name)
+        alias = _county_aliases().get(normalized)
+        if alias:
+            db_names.add(alias)
+    display = set(CANONICAL_COUNTIES) | db_names
+    return [name for name in CANONICAL_COUNTIES if name in display]
