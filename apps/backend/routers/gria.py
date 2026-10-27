@@ -20,6 +20,7 @@ def chat_with_gria(
     response = gria_agent.chat(
         request.message,
         county_name=request.county_name,
+        month=request.month,
         document_context=request.document_context,
         document_name=request.document_name,
     )
@@ -37,4 +38,6 @@ def chat_with_gria(
         reply=response["reply"],
         risk_score=response.get("risk_score"),
         risk_level=response.get("risk_level"),
+        main_driver=response.get("main_driver"),
+        plain_summary=response.get("plain_summary"),
     )

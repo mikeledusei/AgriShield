@@ -166,3 +166,55 @@ def test_api_client_backend_contract_alignment():
         )
         assert "reply" in chat_res
         assert chat_res["risk_score"] is not None
+
+
+def test_shap_forecast_charts_and_upload_comparator():
+    """Verify AgriShieldClient SHAP explainability, future slider forecast, upload comparator, and Plotly charts."""
+    from shared.api_client import AgriShieldClient
+    from shared.ui_helpers import (
+        render_map,
+        render_national_top_risk_chart,
+        render_risk_tier_donut,
+        render_shap_waterfall_chart,
+        render_global_importance_chart,
+        render_trend_chart,
+        render_climate_diagnostics_chart,
+        render_upload_comparison_chart,
+    )
+
+    client = AgriShieldClient(base_url="http://127.0.0.1:9999/api/v1")  # Exercises embedded LightGBM + TreeSHAP
+    batch = client.get_batch_predictions(month="2025-02")
+    assert batch.county_count == 47
+
+    exp = client.explain_county("Turkana", month="2025-02")
+    assert len(exp.local_shap) == 16
+    assert len(exp.global_importance) == 16
+
+    fc = client.forecast_future(
+        "Turkana",
+        target_month=2,
+        focus="livestock",
+        auto_derive_indices=False,
+        overrides={"forage_dryness_index": 0.95, "rainfall_mm": 10.0, "ndvi_anomaly": -0.08},
+    )
+    assert fc.county_name == "Turkana"
+    assert len(fc.forecast.shap_contributions) == 16
+
+    hist = client.get_history("Turkana", months=12)
+    assert len(hist.trend) == 12
+
+    csv_bytes = b"county,month,rainfall_mm,temp_mean_c,soil_moisture,ndvi_lag1,forage_dryness_index\nTurkana,2,9.5,34.0,0.09,0.20,0.92\n"
+    up_res = client.upload_file("turkana_field.csv", csv_bytes, mime_type="text/csv")
+    assert up_res.baseline_risk_score is not None
+    assert len(up_res.converted_features) == 16
+    assert len(up_res.suggestions) >= 1
+
+    # Verify all Plotly chart builders return valid Figures
+    assert len(render_map(batch.counties, selected_county="Turkana").data) >= 1
+    assert len(render_national_top_risk_chart(batch.counties, top_n=15).data) == 1
+    assert len(render_risk_tier_donut(batch.counties).data) == 1
+    assert len(render_shap_waterfall_chart(exp.local_shap, "Turkana").data) == 1
+    assert len(render_global_importance_chart(exp.global_importance).data) == 1
+    assert len(render_trend_chart(hist.trend, "Turkana").data) >= 1
+    assert len(render_climate_diagnostics_chart(hist.trend, "Turkana").data) == 4
+    assert len(render_upload_comparison_chart(up_res, fc.baseline).data) == 1

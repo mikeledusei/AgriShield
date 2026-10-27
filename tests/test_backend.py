@@ -261,6 +261,52 @@ def test_prediction_and_report_endpoints():
             )
             assert r_bad.status_code == 400
 
+            # 12. Future Forecast with Champion Model Feature Sliders
+            r_fc = await client.post(
+                "/api/v1/predictions/forecast",
+                json={
+                    "county_name": "Turkana",
+                    "target_month": 2,
+                    "focus": "livestock",
+                    "auto_derive_indices": False,
+                    "rainfall_mm": 8.0,
+                    "rain_3m_sum": 32.0,
+                    "rainfall_anomaly": -45.0,
+                    "temp_mean_c": 34.5,
+                    "soil_moisture": 0.08,
+                    "ndvi_lag1": 0.21,
+                    "ndvi_anomaly": -0.09,
+                    "forage_dryness_index": 0.95,
+                },
+            )
+            assert r_fc.status_code == 200
+            fc_data = r_fc.json()
+            assert fc_data["county_name"] == "Turkana"
+            assert 0 <= fc_data["forecast"]["risk_score"] <= 100
+            assert len(fc_data["forecast"]["shap_contributions"]) == 16
+            assert "gria_plain_analysis" in fc_data
+
+            # 13. TreeSHAP Explainability endpoint (local + global importance)
+            r_exp = await client.get("/api/v1/predictions/explain?county_name=Marsabit&month=2025-02")
+            assert r_exp.status_code == 200
+            exp_data = r_exp.json()
+            assert exp_data["county_name"] == "Marsabit"
+            assert len(exp_data["local_shap"]) == 16
+            assert len(exp_data["global_importance"]) == 16
+            assert exp_data["global_importance"][0]["feature"] == "forage_dryness_index"
+
+            # 14. Available months endpoint
+            r_months = await client.get("/api/v1/predictions/months")
+            assert r_months.status_code == 200
+            assert "2025-02" in r_months.json()
+
+            # 15. Upload comparator returns baseline comparison, converted 16 features & suggestions
+            up_json = r_up.json()
+            assert "baseline_risk_score" in up_json
+            assert "score_delta_vs_baseline" in up_json
+            assert len(up_json["converted_features"]) == 16
+            assert len(up_json["suggestions"]) >= 1
+
     asyncio.run(_run())
 
 
