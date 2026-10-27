@@ -1,6 +1,7 @@
 """Pydantic models defining the API data contract (non-prediction schemas)."""
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from pydantic import BaseModel
+from schemas.predictions import ShapFeatureContribution
 
 
 # ---------- Core model input ----------
@@ -16,6 +17,7 @@ class ModelInput(BaseModel):
 class GriaChatRequest(BaseModel):
     message: str
     county_name: Optional[str] = None
+    month: Optional[str] = None
     document_context: Optional[str] = None
     document_name: Optional[str] = None
 
@@ -24,6 +26,8 @@ class GriaChatResponse(BaseModel):
     reply: str
     risk_score: Optional[float] = None
     risk_level: Optional[str] = None
+    main_driver: Optional[str] = None
+    plain_summary: Optional[str] = None
 
 
 # ---------- Uploads ----------
@@ -34,6 +38,16 @@ class UploadResponse(BaseModel):
     gria_summary: str
     risk_score: float
     risk_level: str
+    baseline_risk_score: Optional[float] = None
+    baseline_risk_level: Optional[str] = None
+    score_delta_vs_baseline: Optional[float] = None
+    model_used: Optional[str] = None
+    main_driver: Optional[str] = None
+    converted_features: Optional[Dict[str, float]] = None
+    shap_contributions: Optional[List[ShapFeatureContribution]] = None
+    suggestions: Optional[List[str]] = None
+    comparison_narrative: Optional[str] = None
+    row_count: Optional[int] = None
 
 
 # ---------- Reports ----------
