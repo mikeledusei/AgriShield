@@ -2,15 +2,17 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from core.auth import get_current_user
 from core.database import get_db
 from database import models, crud
 from schemas.pydantic_models import ReportRequest
+from seed_counties import ensure_counties_seeded, normalize_county_name
 from services.prediction_service import CountyNotFoundError, get_engine
 from services.pdf_generator import build as build_pdf
 
@@ -37,15 +39,23 @@ class ReportListResponse(BaseModel):
 def create_report(
     req: ReportRequest,
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
+    ensure_counties_seeded(db)
     try:
         engine = get_engine()
-        county = db.query(models.County).filter(
-            models.County.name.ilike(req.county_name.strip()),
-        ).first()
+        canonical = normalize_county_name(req.county_name)
+        county = (
+            db.query(models.County)
+            .filter(models.County.name.ilike(canonical))
+            .first()
+        )
         if county is None:
-            raise HTTPException(status_code=404, detail=f"County '{req.county_name}' not found.")
-        engine.predict(db, county.name, req.report_type, persist=False)
+            raise HTTPException(
+                status_code=404,
+                detail=f"County '{req.county_name}' not found.",
+            )
+        engine.predict_for_county_obj(db, county, req.report_type, persist=False)
         saved = crud.save_report(
             db,
             county_id=county.id,
@@ -61,8 +71,9 @@ def create_report(
 @router.get("/", response_model=ReportListResponse)
 def list_reports(
     report_type: Optional[str] = None,
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
 ):
     query = db.query(models.Report).order_by(desc(models.Report.created_at))
     if report_type:
@@ -76,8 +87,12 @@ def _get_county_name(db: Session, county_id: int) -> str:
     return county.name if county else "Unknown"
 
 
-@router.get("/{report_id}")
-def get_report(report_id: int, db: Session = Depends(get_db)):
+@router.get("/{report_id}", response_model=ReportOut)
+def get_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     report = db.query(models.Report).filter(models.Report.id == report_id).first()
     if report is None:
         raise HTTPException(status_code=404, detail=f"Report {report_id} not found.")
@@ -85,7 +100,11 @@ def get_report(report_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{report_id}/pdf")
-def get_report_pdf(report_id: int, db: Session = Depends(get_db)):
+def get_report_pdf(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
     """Generate and stream the PDF for an existing report."""
     report = db.query(models.Report).filter(models.Report.id == report_id).first()
     if report is None:
@@ -94,9 +113,17 @@ def get_report_pdf(report_id: int, db: Session = Depends(get_db)):
     try:
         prediction = get_engine().predict(db, county_name, persist=False)
     except CountyNotFoundError:
-        prediction = {"risk_score": 0, "risk_level": "SAFE", "main_driver": "N/A",
-                      "recommendation": ""}
+        prediction = {
+            "risk_score": 0,
+            "risk_level": "SAFE",
+            "main_driver": "N/A",
+            "recommendation": "",
+        }
     buffer = build_pdf(county_name, prediction, report.report_type, report.detailed)
-    filename = f"AgriShield_Report_{county_name}_{report.id}.pdf"
-    return StreamingResponse(buffer, media_type="application/pdf",
-                             headers={"Content-Disposition": f"attachment; filename={filename}"})
+    safe_county = county_name.replace(" ", "_").replace("'", "")
+    filename = f"AgriShield_Report_{safe_county}_{report.id}.pdf"
+    return StreamingResponse(
+        buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
