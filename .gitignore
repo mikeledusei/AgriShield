@@ -49,9 +49,9 @@ data_pipeline/data/geospatial/
 
 # Exception: Keep small config/sample files and 2015-2025 raw datasets in data_pipeline/data/ tracked
 !data_pipeline/data/.gitkeep
-data_pipeline/data/
-data_pipeline/data/**
-apps/frontend/assets/kenya_counties.geojson
+!data_pipeline/data/
+!data_pipeline/data/**
+!apps/frontend/assets/kenya_counties.geojson
 
 # Note: The kenya_counties.geojson is a small map asset needed
 # by the frontend, so it is explicitly kept tracked.
