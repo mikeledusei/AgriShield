@@ -1,6 +1,5 @@
 """Pydantic models defining the API data contract (non-prediction schemas)."""
-from datetime import datetime
-from typing import List, Optional
+from typing import Dict, Optional
 from pydantic import BaseModel
 
 
@@ -35,8 +34,6 @@ class UploadResponse(BaseModel):
     gria_summary: str
     risk_score: float
     risk_level: str
-    document_text: Optional[str] = None
-    document_report: Optional[str] = None
 
 
 # ---------- Reports ----------
@@ -49,6 +46,9 @@ class ReportRequest(BaseModel):
 # ---------- Health ----------
 class HealthResponse(BaseModel):
     status: str
-    model_loaded: bool
-    gria_available: bool
-    database_connected: bool
+    services: Dict[str, str]
+    version: str = "1.0.0"
+    model_loaded: bool = False
+    model_name: str = "rule_based"
+    gria_available: bool = False
+    database_connected: bool = False

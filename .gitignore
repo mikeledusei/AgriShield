@@ -52,6 +52,7 @@ data_pipeline/data/geospatial/
 !data_pipeline/data/
 !data_pipeline/data/**
 !apps/frontend/assets/kenya_counties.geojson
+!apps/backend/ml_artifacts/**
 
 # Note: The kenya_counties.geojson is a small map asset needed
 # by the frontend, so it is explicitly kept tracked.

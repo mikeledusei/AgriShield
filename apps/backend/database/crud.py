@@ -1,21 +1,31 @@
 """Reusable database operations."""
-from datetime import datetime
+from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from database import models
+from seed_counties import normalize_county_name
 
 
 # ---------- Counties ----------
 def get_county_by_name(db: Session, name: str):
-    return db.query(models.County).filter(models.County.name == name).first()
+    canonical = normalize_county_name(name)
+    county = db.query(models.County).filter(models.County.name.ilike(canonical)).first()
+    if county is None and canonical != name.strip():
+        county = db.query(models.County).filter(models.County.name.ilike(name.strip())).first()
+    return county
 
 
 def get_all_counties(db: Session):
-    return db.query(models.County).all()
+    return db.query(models.County).order_by(models.County.name).all()
 
 
 def get_counties_by_region(db: Session, region: str):
-    return db.query(models.County).filter(models.County.region == region).all()
+    return (
+        db.query(models.County)
+        .filter(models.County.region.ilike(region.strip()))
+        .order_by(models.County.name)
+        .all()
+    )
 
 
 # ---------- Features ----------
@@ -72,7 +82,7 @@ def save_report(db: Session, county_id: int, report_type: str, detailed: bool,
 
 # ---------- Chat ----------
 def save_chat_message(db: Session, county_name: str, user_message: str,
-                      gria_reply: str, risk_score: float = None):
+                      gria_reply: str, risk_score: Optional[float] = None):
     message = models.ChatMessage(
         county_name=county_name,
         user_message=user_message,
