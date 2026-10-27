@@ -1,10 +1,15 @@
 """SQLAlchemy models for the AgriShield database."""
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text,
 )
 from sqlalchemy.orm import relationship
 from database.connection import Base
+
+
+def _utcnow() -> datetime:
+    """Return UTC timestamp without deprecated datetime.utcnow()."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class County(Base):
@@ -26,7 +31,7 @@ class CountyFeature(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     county_id = Column(Integer, ForeignKey("counties.id"), index=True)
-    record_date = Column(DateTime, default=datetime.utcnow)
+    record_date = Column(DateTime, default=_utcnow)
     rainfall_anomaly_30d = Column(Float)
     ndvi_pasture_index = Column(Float)
     temp_max_avg = Column(Float)
@@ -40,13 +45,13 @@ class Prediction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     county_id = Column(Integer, ForeignKey("counties.id"), index=True)
-    prediction_date = Column(DateTime, default=datetime.utcnow)
+    prediction_date = Column(DateTime, default=_utcnow)
     focus = Column(String)
     risk_score = Column(Float)
     risk_level = Column(String)
     main_driver = Column(String)
     recommendation = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
     county = relationship("County", back_populates="predictions")
 
@@ -59,7 +64,7 @@ class Report(Base):
     report_type = Column(String)
     detailed = Column(Boolean, default=False)
     file_path = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class ChatMessage(Base):
@@ -70,7 +75,7 @@ class ChatMessage(Base):
     user_message = Column(Text)
     gria_reply = Column(Text)
     risk_score = Column(Float)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class Upload(Base):
@@ -82,4 +87,4 @@ class Upload(Base):
     county_name = Column(String)
     risk_score = Column(Float)
     risk_level = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
