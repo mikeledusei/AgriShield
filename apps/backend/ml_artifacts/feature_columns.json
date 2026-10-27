@@ -6,15 +6,13 @@
   "ndvi_roll3_mean",
   "ndvi_roll3_std",
   "ndvi_anomaly",
-  "ndvi_mom_change",
-  "ndvi_zscore",
   "temp_mean_c",
   "rainfall_mm",
   "soil_moisture",
   "rainfall_anomaly",
   "rain_3m_sum",
-  "rain_ndvi_sync",
+  "forage_dryness_index",
+  "farming_ratio",
   "livestock_share",
-  "irrigation_ratio",
-  "farming_ratio"
+  "irrigation_ratio"
 ]
