@@ -363,3 +363,32 @@ Stated here so they are not mistaken for oversights:
   itself is unverified here.
 - **External services are untested by the suite**: Supabase, NVIDIA NIM and Open-Meteo all
   degrade to a labelled unavailable state and are never faked.
+
+## Dependency install fixes (2026-11-20)
+
+**Files:** `scripts/install_venvs.sh` (new), `constraints.txt`,
+`apps/backend/requirements.txt`, `apps/frontend/requirements.txt`,
+`data_pipeline/requirements.txt`, `ml-models/requirements.txt`
+
+Four local `pip install -r requirements.txt` runs failed: `ruff>=0.6` resolved to no
+versions on Python 3.12 because `ruff` was unpinned in `constraints.txt`; two large
+jupyter/matplotlib wheel downloads hit `ReadTimeoutError`; and `jupyter>=1.0.0` made pip
+backtrack through dozens of `jupyter-server`/`jupyterlab` versions.
+
+- **`scripts/install_venvs.sh` (new)** — canonical install method: creates each venv,
+  upgrades pip first (fixes stale-index resolution failures), then installs with
+  `--retries 10 --timeout 300` and `-c constraints.txt`. Falls back to an unconstrained
+  install if a pin lacks a wheel for your Python version. No venv is created in the repo
+  root and every `venv/` is already gitignored.
+- **`constraints.txt`** — added `ruff==0.17.6` (was missing, causing the backend failure),
+  plus `matplotlib`, `seaborn`, `openpyxl` and the jupyter stack (`jupyter`,
+  `jupyterlab`, `jupyter-server`, `notebook`, `nbconvert`, `nbclient`, `nbformat`,
+  `ipykernel`, `jupyter-client`, `jupyter-core`) to stop resolver backtracking.
+- **All four `requirements.txt` headers** — now point to `./scripts/install_venvs.sh` as
+  the recommended method, with the manual `pip install --upgrade pip ... --retries 10
+  --timeout 300 -c constraints.txt` commands as the per-directory alternative.
+
+**Why.** `requirements.txt` comments already said to use `-c constraints.txt`, but the
+command was easy to miss and nothing enforced it. The install script makes the
+correct, retryable, constrained install the default so a fresh clone works on any
+Python version without manual troubleshooting.
