@@ -170,11 +170,11 @@ had was "the process is up" — which is true of a process that cannot score.
   the `ml-models` research scripts is declared in a requirements file, and
   `clean_data.py` and `prepare_maize_outcomes.py` still start. (The `ml-models/scripts/`
   copies of `train.py` were later removed in favour of the notebooks; see the entry below.)
-- **`constraints.txt`** pins the resolved set. All 26 pins were checked against PyPI and
-  exist. `scikit-learn==1.9.0` is exact and commented because the artifact was fitted with it.
-- **CI** (`.github/workflows/ci.yml`): Python 3.12, install from constraints, `ruff check`,
-  `compileall`, apply → roll back → apply migrations on a throwaway SQLite database, run
-  the suite, and an informational `pip-audit`.
+- **No `constraints.txt`** — each `requirements.txt` resolves its own dependencies directly.
+  `scikit-learn==1.9.0` remains pinned in the backend file because the artifact was fitted with it.
+- **CI** (`.github/workflows/ci.yml`): Python 3.12, install from the four requirements files,
+  `ruff check`, `compileall`, apply → roll back → apply migrations on a throwaway SQLite
+  database, run the suite, and an informational `pip-audit`.
 - **Clean-environment proof:** a fresh venv installed from the declared files alone passes
   **79 tests, ruff, compileall and the migration round-trip**. This is what CI does.
 - **`apps/backend/Dockerfile`**: Python 3.12-slim, `libgomp1` for LightGBM, non-root uid
@@ -364,31 +364,33 @@ Stated here so they are not mistaken for oversights:
 - **External services are untested by the suite**: Supabase, NVIDIA NIM and Open-Meteo all
   degrade to a labelled unavailable state and are never faked.
 
-## Dependency install fixes (2026-11-20)
+## Dependency install simplified (2026-11-20)
 
-**Files:** `scripts/install_venvs.sh` (new), `constraints.txt`,
+**Files:** `scripts/install_venvs.sh` (updated),
 `apps/backend/requirements.txt`, `apps/frontend/requirements.txt`,
-`data_pipeline/requirements.txt`, `ml-models/requirements.txt`
+`data_pipeline/requirements.txt`, `ml-models/requirements.txt`,
+`constraints.txt` (removed), `.github/workflows/ci.yml`, `render.yaml`,
+`README.md`
 
-Four local `pip install -r requirements.txt` runs failed: `ruff>=0.6` resolved to no
-versions on Python 3.12 because `ruff` was unpinned in `constraints.txt`; two large
-jupyter/matplotlib wheel downloads hit `ReadTimeoutError`; and `jupyter>=1.0.0` made pip
-backtrack through dozens of `jupyter-server`/`jupyterlab` versions.
+Removed `constraints.txt` entirely — it added a second source of truth for
+dependency versions and caused install failures when a pin lacked a wheel for
+the local Python version (`ruff>=0.6` resolved to nothing on Python 3.12
+because `ruff` was unpinned, and `jupyter>=1.0.0` made pip backtrack through
+dozens of jupyter-server/jupyterlab versions).
 
-- **`scripts/install_venvs.sh` (new)** — canonical install method: creates each venv,
-  upgrades pip first (fixes stale-index resolution failures), then installs with
-  `--retries 10 --timeout 300` and `-c constraints.txt`. Falls back to an unconstrained
-  install if a pin lacks a wheel for your Python version. No venv is created in the repo
-  root and every `venv/` is already gitignored.
-- **`constraints.txt`** — added `ruff==0.17.6` (was missing, causing the backend failure),
-  plus `matplotlib`, `seaborn`, `openpyxl` and the jupyter stack (`jupyter`,
-  `jupyterlab`, `jupyter-server`, `notebook`, `nbconvert`, `nbclient`, `nbformat`,
-  `ipykernel`, `jupyter-client`, `jupyter-core`) to stop resolver backtracking.
-- **All four `requirements.txt` headers** — now point to `./scripts/install_venvs.sh` as
-  the recommended method, with the manual `pip install --upgrade pip ... --retries 10
-  --timeout 300 -c constraints.txt` commands as the per-directory alternative.
+- **`constraints.txt` deleted** — each `requirements.txt` now resolves its own
+  dependencies directly, which is simpler and avoids stale-pin failures.
+- **`scripts/install_venvs.sh`** — updated to install without `-c
+  constraints.txt`; still upgrades pip first and uses `--retries 10
+  --timeout 300` to survive network hiccups on large wheel downloads.
+- **All four `requirements.txt` headers** — manual install command now omits
+  `-c constraints.txt`.
+- **CI (`.github/workflows/ci.yml`)** — removed `-c constraints.txt` from the
+  pip install and `constraints.txt` from `cache-dependency-path`.
+- **Render (`render.yaml`)** — `buildCommand` no longer passes `-c constraints.txt`.
+- **`README.md`** — removed the `constraints.txt` reference from the repository map.
 
-**Why.** `requirements.txt` comments already said to use `-c constraints.txt`, but the
-command was easy to miss and nothing enforced it. The install script makes the
-correct, retryable, constrained install the default so a fresh clone works on any
-Python version without manual troubleshooting.
+**Why.** One `requirements.txt` per component is the standing rule; `constraints.txt`
+was a second, easily-out-of-sync file. The install script's `--retries`,
+`--timeout`, and `pip --upgrade` handle the real failure modes (timeouts and
+stale indexes) without a separate constraints file.

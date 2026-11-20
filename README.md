@@ -178,7 +178,7 @@ The former prediction, forecast, upload, storage and report-history APIs could p
 
 - `apps/frontend/` — Streamlit presentation and API client. The county map (colour scale, labelling, why it is not a tile basemap) is documented in [docs/MAP_DESIGN.md](docs/MAP_DESIGN.md).
 - `apps/backend/` — FastAPI, inference, document extraction, reports, auth, database and migrations. Every module here is reachable from `main.py`; retired routes live in `routers/legacy.py` and answer 410 explicitly.
-- `pyproject.toml` — ruff and pytest configuration. `constraints.txt` pins the resolved dependency set.
+- `pyproject.toml` — ruff and pytest configuration.
 - `docs/` — [CHANGELOG](docs/CHANGELOG.md) (every change with file paths and reasons), [deployment runbook](docs/DEPLOYMENT.md), [map design](docs/MAP_DESIGN.md), [data and model card](docs/DATA_MODEL_CARD.md).
 - `data_pipeline/` — local data, cleaning, feature-building and exploration.
 - `ml-models/` — retrospective model training and evaluation.

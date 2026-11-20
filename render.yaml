@@ -6,7 +6,7 @@ services:
     runtime: python
     plan: free
     rootDir: .
-    buildCommand: pip install -r apps/backend/requirements.txt -c constraints.txt
+    buildCommand: pip install -r apps/backend/requirements.txt
     # Schema is applied once per deploy, before the new instance takes traffic.
     preDeployCommand: cd apps/backend && alembic upgrade head && python seed_counties.py
     startCommand: cd apps/backend && uvicorn main:app --host 0.0.0.0 --port $PORT

@@ -7,16 +7,14 @@
 # What it does, per directory (apps/backend, apps/frontend, data_pipeline, ml-models):
 #   1. python3 -m venv <dir>/venv
 #   2. pip install --upgrade pip        (fixes stale-index / old-pip resolution failures)
-#   3. pip install --retries 10 --timeout 300 -r <dir>/requirements.txt -c constraints.txt
-#      (reproducible, retry on network timeouts; falls back to no-constraints if a pin
-#       lacks a wheel for your Python version)
+#   3. pip install --retries 10 --timeout 300 -r <dir>/requirements.txt
+#      (retry on network timeouts)
 #
 # No venv is created in the repo root, and every `venv/` is gitignored — nothing here
 # is committed. Re-run anytime to repair or refresh an environment.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONSTRAINTS="$ROOT_DIR/constraints.txt"
 
 DIRS=(
   "apps/backend"
@@ -44,22 +42,12 @@ install_one() {
   log "Upgrading pip in $dir ..."
   "$venv_bin/python" -m pip install --upgrade pip
 
-  log "Installing $dir/requirements.txt (with constraints, retries=10, timeout=300s) ..."
-  if "$venv_bin/pip" install \
-        --retries 10 \
-        --timeout 300 \
-        -r "$req" \
-        -c "$CONSTRAINTS"; then
-    log "$dir installed OK."
-    return 0
-  fi
-
-  err "$dir failed with constraints; retrying without constraints (some pins may lack a wheel for your Python version) ..."
+  log "Installing $dir/requirements.txt (retries=10, timeout=300s) ..."
   "$venv_bin/pip" install \
         --retries 10 \
         --timeout 300 \
         -r "$req"
-  log "$dir installed OK (without constraints)."
+  log "$dir installed OK."
 }
 
 main() {
