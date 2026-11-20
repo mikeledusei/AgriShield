@@ -5,6 +5,7 @@ Explainability: Exact TreeSHAP feature contributions (pred_contrib=True) + Globa
 Fallback scorer: transparent rule-based engine (always available).
 """
 import json
+import hashlib
 import logging
 import math
 from functools import lru_cache
@@ -16,6 +17,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from core.config import settings
 from database import models
 from seed_counties import COUNTY_METADATA, ensure_counties_seeded, normalize_county_name
 
@@ -130,6 +132,7 @@ class PredictionEngine:
 
     def __init__(self) -> None:
         self.model = None
+        self.model_sha256 = None
         self.model_name: str = "rule_based"
         self.scaler = None
         self.feature_cols: List[str] = []
@@ -156,27 +159,18 @@ class PredictionEngine:
             except Exception as exc:
                 logger.warning(f"Failed to load scaler.joblib: {exc}")
 
-        candidate_models = [
-            (ARTIFACT_DIR / "lightgbm_agrishield_v1.joblib", "lightgbm_v1"),
-            (ARTIFACT_DIR / "champion_model.joblib", "lightgbm_v1"),
-            (ARTIFACT_DIR / "xgboost_agrishield_v1.joblib", "xgboost_v1"),
-        ]
-        for model_path, model_tag in candidate_models:
-            if model_path.exists() and self.feature_cols:
-                try:
-                    self.model = joblib.load(model_path)
-                    cls_name = type(self.model).__name__.lower()
-                    if "lgbm" in cls_name or "lightgbm" in cls_name:
-                        self.model_name = "lightgbm_v1"
-                    elif "xgb" in cls_name:
-                        self.model_name = "xgboost_v1"
-                    else:
-                        self.model_name = model_tag
-                    logger.info(f"Champion model loaded from {model_path.name} ({self.model_name}).")
-                    break
-                except Exception as exc:
-                    logger.warning(f"Could not load {model_path.name}: {exc}")
-                    self.model = None
+        model_path = settings.MODEL_PATH
+        if model_path.exists() and self.feature_cols:
+            try:
+                self.model = joblib.load(model_path)
+                self.model_sha256 = hashlib.sha256(model_path.read_bytes()).hexdigest()
+                cls_name = type(self.model).__name__.lower()
+                self.model_name = 'lightgbm_v1' if 'lgbm' in cls_name or 'lightgbm' in cls_name else type(self.model).__name__
+                logger.info('Model loaded from %s (%s).', model_path.name, self.model_name)
+            except Exception as exc:
+                logger.warning('Could not load configured model %s: %s', model_path.name, exc)
+                self.model = None
+                self.model_sha256 = None
 
         for stats_path in (
             ARTIFACT_DIR / "county_ndvi_stats.csv",
@@ -244,77 +238,31 @@ class PredictionEngine:
         )
 
     def get_available_months(self) -> List[str]:
-        if self.available_months:
-            return self.available_months
-        return ["2025-02", "2025-03", "2025-09", "2025-10", "2025-11", "2025-12"]
+        return list(self.available_months)
 
-    # ----------------------------------------------------- feature vector
     def _resolve_month(self, county: str, requested_month: Optional[str] = None) -> str:
         c_name = normalize_county_name(county)
         hist = self.county_history.get(c_name)
-        if hist is not None and not hist.empty and "year_month" in hist.columns:
-            available = set(hist["year_month"].astype(str))
-            if requested_month and str(requested_month) in available:
-                return str(requested_month)
-            if DEFAULT_ACTIVE_MONTH in available:
-                return DEFAULT_ACTIVE_MONTH
-            return str(hist["year_month"].iloc[-1])
-        return requested_month or DEFAULT_ACTIVE_MONTH
+        if hist is None or hist.empty or "year_month" not in hist.columns:
+            raise ValueError(f"No historical data is available for {c_name}.")
+        available = set(hist["year_month"].astype(str))
+        if requested_month:
+            if str(requested_month) not in available:
+                raise ValueError(f"No historical data is available for {c_name} in {requested_month}.")
+            return str(requested_month)
+        return str(hist["year_month"].iloc[-1])
 
     def _build_vector(self, county: str, month_key: Optional[str] = None) -> Optional[Dict[str, float]]:
         c_name = normalize_county_name(county)
         hist = self.county_history.get(c_name)
         resolved_month = self._resolve_month(c_name, month_key)
-
-        if hist is not None and not hist.empty:
-            sub = hist[hist["year_month"] == resolved_month]
-            row = sub.iloc[-1] if not sub.empty else hist.iloc[-1]
-            vec = {}
-            for col in self.feature_cols:
-                if col in row.index and pd.notna(row[col]):
-                    vec[col] = round(float(row[col]), 6)
-            if len(vec) == len(self.feature_cols):
-                return vec
-
-        stats = self.ndvi_stats.get(c_name)
-        if stats is None or not self.feature_cols:
+        sub = hist[hist["year_month"] == resolved_month]
+        if sub.empty:
             return None
-
-        month_num = 2
-        if resolved_month and "-" in str(resolved_month):
-            try:
-                month_num = int(str(resolved_month).split("-")[1])
-            except ValueError:
-                month_num = 2
-
-        ndvi_mean = stats["mean"]
-        ndvi_std = stats["std"]
-        is_arid = ndvi_mean < 0.45
-        temp_c = 29.5 if is_arid else 22.0
-        rain_mm = 18.0 if is_arid else 78.0
-        soil_m = 0.14 if is_arid else 0.31
-        soil_def = max(0.0, 0.45 - soil_m)
-        forage_dry = round(0.5 * soil_def * (temp_c / 25.0), 4)
-
-        vec = {
-            "month_sin": round(math.sin(2 * math.pi * month_num / 12.0), 6),
-            "month_cos": round(math.cos(2 * math.pi * month_num / 12.0), 6),
-            "ndvi_lag1": round(ndvi_mean, 6),
-            "ndvi_lag3": round(ndvi_mean, 6),
-            "ndvi_roll3_mean": round(ndvi_mean, 6),
-            "ndvi_roll3_std": round(ndvi_std * 0.5, 6),
-            "ndvi_anomaly": 0.0,
-            "temp_mean_c": temp_c,
-            "rainfall_mm": rain_mm,
-            "soil_moisture": soil_m,
-            "rainfall_anomaly": -20.0 if is_arid else 0.0,
-            "rain_3m_sum": round(rain_mm * 3.0, 4),
-            "forage_dryness_index": forage_dry,
-            "farming_ratio": 0.45 if is_arid else 0.68,
-            "livestock_share": 0.65 if is_arid else 0.38,
-            "irrigation_ratio": 0.04 if is_arid else 0.08,
-        }
-        return vec
+        row = sub.iloc[-1]
+        if not self.feature_cols or any(c not in row.index or pd.isna(row[c]) for c in self.feature_cols):
+            return None
+        return {c: float(row[c]) for c in self.feature_cols}
 
     def _rule_features(self, county: str, month_key: Optional[str]) -> Dict[str, float]:
         c_name = normalize_county_name(county)
@@ -367,7 +315,8 @@ class PredictionEngine:
                 else:
                     shap_vals = np.asarray(sv[0], dtype=float)
         except Exception as exc:
-            logger.warning(f"SHAP computation fallback triggered: {exc}")
+            logger.warning(f"SHAP computation unavailable: {exc}")
+            return [], 0.0
 
         items: List[Dict[str, Any]] = []
         for col, s_val in zip(self.feature_cols, shap_vals):
@@ -518,9 +467,7 @@ class PredictionEngine:
                 return score, get_risk_level(score), driver, self.model_name, shap_items
             except Exception as exc:
                 logger.warning(f"ML scoring failed for {county}: {exc}")
-        comps = _rule_components(rule_feats)
-        score = compute_score(rule_feats)
-        return score, get_risk_level(score), _main_driver(comps), "rule_based", []
+        raise ValueError(f"No trained-model score is available for {county} in {month_key}.")
 
     # ----------------------------------------------------------- public API
     def _get_county(self, db: Optional[Session], name: str) -> models.County:

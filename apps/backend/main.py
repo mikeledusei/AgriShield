@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import settings
-from routers import health, predictions, gria, uploads, reports, storage, auth
+from routers import health, manual_predictions, gria, auth, snapshot_reports, legacy, documents, live, history, outcomes
 from seed_counties import seed as seed_counties
 from services import logging_service
 
@@ -22,11 +22,12 @@ async def lifespan(app: FastAPI):
 
     logging_service.info("🚀 Initializing AgriShield API...")
     logging_service.info(f" Environment: {settings.APP_ENV}")
-    logging_service.info("🗄️  Database: NeonDB (PostgreSQL)")
-    logging_service.info("🔐 Storage: Supabase")
-    logging_service.info("⚡ Cache: Redis")
+    logging_service.info("Report database configured" if settings.DATABASE_URL else "Report database not configured")
     if settings.DATABASE_URL:
-        seed_counties()
+        try:
+            seed_counties()
+        except Exception:
+            logging_service.error("Database initialization failed; report storage is unavailable.")
     logging_service.info(" Server is ready to accept connections!")
 
     yield
@@ -37,7 +38,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AgriShield API",
-    description="Backend for crop yield and livestock forage risk prediction.",
+    description="Research prototype for a historical vegetation-stress proxy; not an operational early warning system.",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -47,18 +48,22 @@ cors_origins = settings.cors_origins_list
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
-    allow_credentials=True,
+    allow_credentials=cors_origins != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(health.router, prefix=settings.API_V1_PREFIX)
+app.include_router(live.router, prefix=settings.API_V1_PREFIX)
+app.include_router(outcomes.router, prefix=settings.API_V1_PREFIX)
 app.include_router(auth.router, prefix=settings.API_V1_PREFIX)
-app.include_router(predictions.router, prefix=settings.API_V1_PREFIX)
-app.include_router(storage.router, prefix=settings.API_V1_PREFIX)
+app.include_router(manual_predictions.router, prefix=settings.API_V1_PREFIX)
 app.include_router(gria.router, prefix=settings.API_V1_PREFIX)
-app.include_router(uploads.router, prefix=settings.API_V1_PREFIX)
-app.include_router(reports.router, prefix=settings.API_V1_PREFIX)
+app.include_router(documents.router, prefix=settings.API_V1_PREFIX)
+app.include_router(snapshot_reports.router, prefix=settings.API_V1_PREFIX)
+app.include_router(history.router, prefix=settings.API_V1_PREFIX)
+# Unsafe legacy routes are explicitly retired instead of silently returning invented data.
+app.include_router(legacy.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/")

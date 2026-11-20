@@ -1,0 +1,98 @@
+{
+  "target": "Reported annual maize yield, tonnes per harvested hectare",
+  "split": {
+    "train": "2015-2017",
+    "validation": "2018",
+    "held_out_evaluation": "2020"
+  },
+  "selection": "Lowest 2018 validation MAE, without hyperparameter tuning",
+  "selected_model": "ridge",
+  "features": [
+    "rainfall_year_mm",
+    "temperature_mean_c",
+    "soil_moisture_mean",
+    "prior_yield_mean"
+  ],
+  "results": {
+    "ridge": {
+      "validation_2018": {
+        "samples": 47,
+        "mae_tonnes_per_ha": 0.36825565816824096,
+        "rmse_tonnes_per_ha": 0.5488355664501411,
+        "r2": 0.7152504081654039
+      },
+      "holdout_2020": {
+        "samples": 46,
+        "mae_tonnes_per_ha": 0.3941718801512536,
+        "rmse_tonnes_per_ha": 0.6057819610646712,
+        "r2": 0.5423844832436906
+      }
+    },
+    "random_forest": {
+      "validation_2018": {
+        "samples": 47,
+        "mae_tonnes_per_ha": 0.39497720673930975,
+        "rmse_tonnes_per_ha": 0.5592748095438675,
+        "r2": 0.7043151095296646
+      },
+      "holdout_2020": {
+        "samples": 46,
+        "mae_tonnes_per_ha": 0.42279266742523935,
+        "rmse_tonnes_per_ha": 0.627428928566504,
+        "r2": 0.5090953502208069
+      }
+    },
+    "xgboost": {
+      "validation_2018": {
+        "samples": 47,
+        "mae_tonnes_per_ha": 0.4180118681873672,
+        "rmse_tonnes_per_ha": 0.6205729011915635,
+        "r2": 0.635947322319806
+      },
+      "holdout_2020": {
+        "samples": 46,
+        "mae_tonnes_per_ha": 0.44377697515463765,
+        "rmse_tonnes_per_ha": 0.6849442049107645,
+        "r2": 0.41496956542045615
+      }
+    },
+    "lightgbm": {
+      "validation_2018": {
+        "samples": 47,
+        "mae_tonnes_per_ha": 0.42473711856886515,
+        "rmse_tonnes_per_ha": 0.6089852888814002,
+        "r2": 0.64941589762609
+      },
+      "holdout_2020": {
+        "samples": 46,
+        "mae_tonnes_per_ha": 0.4274959549780041,
+        "rmse_tonnes_per_ha": 0.6164046911351284,
+        "r2": 0.5261946732900951
+      }
+    }
+  },
+  "historical_county_mean_baseline": {
+    "validation_2018": {
+      "samples": 47,
+      "mae_tonnes_per_ha": 0.34575189150940516,
+      "rmse_tonnes_per_ha": 0.5120937272115675,
+      "r2": 0.7520994287401133
+    },
+    "holdout_2020": {
+      "samples": 46,
+      "mae_tonnes_per_ha": 0.38341296738618447,
+      "rmse_tonnes_per_ha": 0.6503779948673871,
+      "r2": 0.47252759291185653
+    }
+  },
+  "source_sha256": "28c092058607ded79c29bed6e6722aedca2e42d126f6a9c96352f8c689b01daa",
+  "climate_sha256": "ebc17397bb70b1598734933cb4df5c53b58342b341c856ed592f3d8ec89b3185",
+  "limitations": [
+    "Third-party workbook source, primary source not independently verified.",
+    "Annual historical data only; 2019 missing and zero-area or inconsistent records excluded.",
+    "Full-year weather is retrospective, not available at the start of the year.",
+    "Packaged climate data provenance is unverified and soil moisture is partially imputed.",
+    "Small held-out sample from a single year; not independently verified field outcomes.",
+    "This experiment estimates yield, not crop-loss risk; no live deployment or threshold is approved."
+  ]
+}

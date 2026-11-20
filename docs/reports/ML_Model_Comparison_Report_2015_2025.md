@@ -1,10 +1,12 @@
+> **Important correction:** The 2024–2025 data below was used to select the champion and is not an independent final test. Results measure a synthesized low-NDVI proxy, not verified crop or forage outcomes. Same-month weather and retrospective demographic data limit forecasting claims; "leakage-free" below should not be read as proof of an as-of forecasting evaluation. See [data/model card](../DATA_MODEL_CARD.md).
+
 # AgriShield ML Model Training & Evaluation Report (2015–2025)
 
 ## 1. Executive Summary
 - **Dataset Coverage:** All **47 Kenyan Counties**, monthly from **January 2015 to December 2025** (`6,204` county-month records).
-- **Chronological Split (Leakage-Free):**
+- **Chronological Split:**
   - **Training Set (`2015–2023`):** `5,076` county-months (`9` years).
-  - **Unseen Holdout Test Set (`2024–2025`):** `1,128` county-months (`2` years).
+  - **Previously used evaluation set (`2024–2025`):** `1,128` county-months (`2` years).
 - **Selected Champion Model:** **LightGBM** (`Accuracy = 94.06%`, `Recall = 100.00%`, `F1 = 0.5677`, `ROC-AUC = 0.9869`).
 
 ## 2. Holdout Test Set Performance (`2024–2025`, Unseen Data)
@@ -19,4 +21,4 @@
 ## 3. Key Findings Aligned with Project Proposal (Table 3.3)
 1. **Decision Tree Ensembles vs. Linear Baseline:** All three tree-based models (`LightGBM`, `XGBoost`, and `Random Forest`) achieved **`100.0%` Recall (`1.0000`)** on the unseen `2024–2025` test data, outperforming the `Logistic Regression` baseline (`Recall = 90.91%`, `F1 = 0.4233`).
 2. **Top Ranking Models:** `LightGBM` achieved the highest overall Accuracy (`94.06%`) and F1-Score (`0.5677`), while `XGBoost` achieved the highest ROC-AUC (`0.9884`).
-3. **Engineered Proposal Indicators:** Both the **30-Day Rainfall Anomaly Index (`rainfall_anomaly`)** and the **Forage Dryness Index (`forage_dryness_index`)** from Section 3.3.2 of the proposal were engineered without target leakage and saved in `feature_columns.json`.
+3. **Engineered Proposal Indicators:** Both the **30-Day Rainfall Anomaly Index (`rainfall_anomaly`)** and the **Forage Dryness Index (`forage_dryness_index`)** from Section 3.3.2 of the proposal were engineered with lagged vegetation features (subject to the temporal limitations noted above) and saved in `feature_columns.json`.

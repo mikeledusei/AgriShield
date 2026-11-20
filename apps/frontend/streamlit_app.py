@@ -1,819 +1,661 @@
-"""
-AgriShield Geospatial AI Early-Warning Dashboard (apps/frontend/streamlit_app.py).
-
-Full-stack Streamlit workspace integrating:
-1. All 47 Kenyan Counties Geospatial Choropleth Risk Map & National Risk Charts
-2. Future Forecast Simulator powered by sliders for all 16 LightGBM Champion Model Features
-3. Exact TreeSHAP Local & Global Explainability Charts + Plain-Language Translation
-4. Multi-Metric Agro-Climatic Trend Charts (Rainfall, NDVI, Soil Moisture, Forage Dryness)
-5. Gria Agentic AI: Plain-English Model Simplifier, Multi-Format Uploaded Data Converter &
-   Baseline Comparator (CSV, XLSX, PDF, DOCX, Images), and Interactive Chat
-"""
+"""AgriShield's API-only Streamlit interface."""
+import base64
+import csv
+import io
+import json
 from pathlib import Path
-import sys
-from typing import Dict, List, Optional
 
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-FRONTEND_DIR = Path(__file__).resolve().parent
-if str(FRONTEND_DIR) not in sys.path:
-    sys.path.insert(0, str(FRONTEND_DIR))
+from shared.api_client import APIError, get_client
 
-from shared.api_client import get_client
-from shared.constants import KENYA_COUNTIES, KENYA_REGIONS
-from shared.kenya_counties import COUNTY_COORDINATES
-from shared.types import ExplainResult, FutureForecastResult, PredictionResult, UploadResult
-from shared.ui_helpers import (
-    load_custom_css,
-    load_kenya_geojson,
-    render_climate_diagnostics_chart,
-    render_comparison_chart,
-    render_global_importance_chart,
-    render_map,
-    render_metric_card,
-    render_national_top_risk_chart,
-    render_risk_tier_donut,
-    render_shap_waterfall_chart,
-    render_trend_chart,
-    render_upload_comparison_chart,
-    risk_color,
-)
-
-MONTH_NAMES = {
-    1: "January (Dry Season)",
-    2: "February (Peak Dry Stress)",
-    3: "March (Long Rains Onset)",
-    4: "April (Long Rains Peak)",
-    5: "May (Long Rains Tail)",
-    6: "June (Cool Dry Transition)",
-    7: "July (Cool Dry Season)",
-    8: "August (Pre-Short Rains Dry)",
-    9: "September (Late Dry Stress)",
-    10: "October (Short Rains Onset)",
-    11: "November (Short Rains Peak)",
-    12: "December (Post-Short Rains Greenup)",
-}
-
-
-st.set_page_config(
-    page_title="AgriShield | Kenya Food Security & SHAP Early-Warning System",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-load_custom_css()
+st.set_page_config(page_title="AgriShield | Agricultural intelligence", page_icon="🌿", layout="wide", initial_sidebar_state="expanded")
+ASSETS = Path(__file__).resolve().parent / "assets"
 client = get_client()
 
-# ---------------------------------------------------------------------------
-# Session state initialization
-# ---------------------------------------------------------------------------
-if "selected_county" not in st.session_state:
-    st.session_state.selected_county = "Turkana"
-if "selected_focus" not in st.session_state:
-    st.session_state.selected_focus = "combined"
-if "selected_month" not in st.session_state:
-    st.session_state.selected_month = "2025-02"
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [
-        {
-            "role": "assistant",
-            "content": (
-                "Jambo! I am **Gria**, your AgriShield AI advisor. I translate our **LightGBM Champion Model** "
-                "and **TreeSHAP Explainability** into simple, everyday language, convert and compare your uploaded "
-                "datasets against official county baselines, and help you plan crop & livestock actions across all **47 Kenyan counties**."
-            ),
-        }
-    ]
-if "uploaded_context" not in st.session_state:
-    st.session_state.uploaded_context = None
-if "uploaded_name" not in st.session_state:
-    st.session_state.uploaded_name = None
-if "last_upload_result" not in st.session_state:
-    st.session_state.last_upload_result = None
-if "last_forecast_result" not in st.session_state:
-    st.session_state.last_forecast_result = None
+
+def inject_style():
+    image = base64.b64encode((ASSETS / "agrishield-landscape.jpg").read_bytes()).decode()
+    st.markdown(f'''<style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Serif+Display&display=swap');
+    .stApp {{background:#f6f8f3;color:#203b2a;font-family:'DM Sans',sans-serif;}}
+    [data-testid="stSidebar"] {{background:#173e2c;}}
+    [data-testid="stSidebar"] *, [data-testid="stSidebar"] p {{color:#eef5e9 !important;}}
+    [data-testid="stSidebar"] [data-testid="stRadio"] label {{padding:8px 0;}}
+    .block-container {{padding-top:2rem;padding-bottom:4rem;max-width:1400px;}}
+    h1,h2,h3 {{color:#173e2c;letter-spacing:-.035em;}}
+    h1,h2 {{font-family:'DM Serif Display',serif;}}
+    .hero {{min-height:278px;border-radius:18px;padding:38px 42px;display:flex;flex-direction:column;justify-content:center;color:white;background:linear-gradient(90deg,rgba(14,48,29,.92),rgba(20,55,32,.57) 54%,rgba(20,55,32,.08)),url("data:image/jpeg;base64,{image}") center 54%/cover;}}
+    .hero h1 {{color:white;font-size:2.9rem;line-height:1.04;margin:10px 0 14px;max-width:590px;}}
+    .hero p {{color:#edf5e8;max-width:560px;font-size:1rem;line-height:1.6;margin:0;}}
+    .eyebrow {{color:#a8d79d;font-weight:700;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;}}
+    .section-label {{color:#628168;font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.72rem;margin-top:1.5rem;}}
+    .intro {{color:#6a7d6d;line-height:1.6;margin-top:-.4rem;}}
+    .feature-card {{background:white;border:1px solid #e4ebe0;border-radius:14px;padding:20px;min-height:145px;box-shadow:0 3px 14px rgba(30,65,40,.025);}}
+    .feature-card .icon {{font-size:1.25rem;background:#edf4e8;border-radius:10px;padding:8px;display:inline-block;margin-bottom:12px;}}
+    .feature-card strong {{display:block;font-size:1rem;color:#203d2a;margin-bottom:5px;}}
+    .feature-card span {{font-size:.83rem;color:#6d8070;line-height:1.45;}}
+    .soft-note {{background:#edf4e9;border:1px solid #d9e9d4;border-radius:12px;padding:15px 18px;color:#45664d;font-size:.85rem;line-height:1.5;}}
+    [data-testid="stMetric"] {{background:#fff;border:1px solid #e3ebdf;border-radius:12px;padding:16px;}}
+    [data-testid="stMetricValue"] {{color:#1d4b30;}}
+    [data-testid="stForm"] {{background:white;border:1px solid #e1eadd;border-radius:16px;padding:24px;}}
+    .stButton > button[kind="primary"], .stFormSubmitButton > button {{background:#2b6842;border:0;border-radius:9px;color:#fff;font-weight:700;}}
+    .stButton > button, .stDownloadButton > button {{border-radius:9px;}}
+    div[data-testid="stExpander"] {{background:white;border:1px solid #e1eadd;border-radius:12px;}}
+    @media(max-width:640px) {{.hero {{padding:27px;min-height:250px}} .hero h1 {{font-size:2.1rem}}}}
+    </style>''', unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------------------
-# Cached Data Fetchers
-# ---------------------------------------------------------------------------
-@st.cache_data(ttl=120, show_spinner=False)
-def fetch_available_months() -> List[str]:
-    months = client.get_available_months()
-    # Keep 2024-2025 holdout months at top for fast selection while allowing full 2015-2025
-    recent = [m for m in months if m >= "2024-01"]
-    return sorted(recent, reverse=True) if recent else ["2025-02", "2025-09", "2025-12"]
+def api(call, *args, **kwargs):
+    try:
+        return call(*args, **kwargs)
+    except APIError as exc:
+        st.error(str(exc))
+        return None
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_batch(month: Optional[str]):
-    return client.get_batch_predictions(month=month)
+def page_heading(kicker, title, description):
+    st.markdown(f'<div class="section-label">{kicker}</div>', unsafe_allow_html=True)
+    st.title(title)
+    st.markdown(f'<p class="intro">{description}</p>', unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_county_prediction(county_name: str, focus: str, month: Optional[str]) -> PredictionResult:
-    return client.get_prediction(county_name, focus=focus, month=month)
+def disclaimer():
+    st.markdown('<div class="soft-note"><strong>About this research tool.</strong> The model estimates a vegetation-greenness stress proxy. It does not predict confirmed crop losses or forage shortages, and its scores are not calibrated probabilities or official warnings. Check results with local experts before acting.</div>', unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_county_explain(county_name: str, month: Optional[str]) -> ExplainResult:
-    return client.explain_county(county_name, month=month)
+def show_shap(explanation, key):
+    if not explanation:
+        st.info('SHAP contributions are unavailable for this model output.')
+        return
+    st.caption('SHAP shows how each input moves this model output relative to its baseline. It does not show causes or percentage-point changes.')
+    rows = explanation['values'][:10]
+    frame = pd.DataFrame([{'Input': x['label'],
+                           'Contribution': x['contribution'],
+                           'Direction': 'Raises model output' if x['contribution'] >= 0 else 'Lowers model output'} for x in rows])
+    frame = frame.iloc[::-1]
+    fig = px.bar(frame, x='Contribution', y='Input', color='Direction', orientation='h',
+                 color_discrete_map={'Raises model output': '#b46041', 'Lowers model output': '#438059'},
+                 labels={'Contribution': 'SHAP contribution (model log-odds)', 'Input': ''})
+    fig.update_layout(height=max(300, len(rows) * 35 + 95), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend_title_text='')
+    st.plotly_chart(fig, use_container_width=True, key=key)
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def fetch_county_history(county_name: str, months: int = 12):
-    return client.get_history(county_name, months=months)
+def show_analysis(analysis):
+    st.markdown('#### Gria’s explanation' if analysis['mode'] == 'ai' else '#### Evidence summary')
+    st.markdown(analysis['text'])
+    st.caption('AI-generated text can contain mistakes; verify decisions with a local expert.' if analysis['mode'] == 'ai' else 'Gria AI is unavailable. This is a factual backend summary, not an AI-generated analysis.')
 
 
-# ---------------------------------------------------------------------------
-# Sidebar: County, Observation Period, Focus & National Risk Summary
-# ---------------------------------------------------------------------------
+def assessment_payload(result, schema):
+    return {'county_name': result['county_name'], 'period': result['period'], **{item['key']: result['features'][item['key']] for item in schema['features']}}
+
+
+def remember_assessment(result):
+    st.session_state.previous_assessment = st.session_state.get('last_successful_assessment')
+    st.session_state.last_successful_assessment = result
+    st.session_state.assessment = result
+
+
+def show_result(result):
+    st.markdown('### Your assessment')
+    a, b, c = st.columns(3)
+    a.metric('Vegetation-stress score', f"{result['score']} / 100")
+    b.metric('Score band', result['band'])
+    c.metric('Observation period', result['period'])
+    st.caption(f"{result['county_name']} County · Model: {result['model_used']} · Calculated by the backend from the inputs below")
+    disclaimer()
+    if result.get('training_range_warnings'):
+        st.warning('Some inputs are outside the range seen in training: ' + ', '.join(item['label'] for item in result['training_range_warnings']) + '. The model may be less reliable for these values.')
+    elif result.get('training_range_check') != 'checked':
+        st.info('Training-range checks are unavailable for this model.')
+    else:
+        st.caption('Inputs are within the individual ranges observed in training; this does not guarantee their combination is familiar or that the score is accurate.')
+    if result.get('measurements'):
+        with st.expander('See the original measurements'):
+            st.dataframe(pd.DataFrame([{'Measurement': k, 'Value': v} for k, v in result['measurements'].items()]), hide_index=True, use_container_width=True)
+    with st.expander('What influenced this score? (SHAP)', expanded=True):
+        show_shap(result.get('explanation'), 'assessment_shap')
+    st.caption('If you ask Gria to analyze this assessment or include its analysis in a report, the model inputs and score may be sent to the configured AI provider. Do not include sensitive information.')
+    if st.button('Ask Gria to analyze this assessment', key='analyze_assessment'):
+        schema = api(client.schema)
+        if schema:
+            with st.spinner('Analyzing the model evidence…'):
+                response = api(client.analyze_assessment, assessment_payload(result, schema), result)
+            if response:
+                st.session_state.manual_analysis = {'key': (result['county_name'], result['period'], result['model_probability']), 'analysis': response['analysis']}
+    stored_analysis = st.session_state.get('manual_analysis')
+    if stored_analysis and stored_analysis['key'] == (result['county_name'], result['period'], result['model_probability']):
+        show_analysis(stored_analysis['analysis'])
+    with st.expander('See the exact model inputs'):
+        st.dataframe(pd.DataFrame([{'Input': k, 'Value': v} for k, v in result['features'].items()]), hide_index=True, use_container_width=True)
+    if st.button('Save assessment to history', key='save_assessment_history'):
+        history_key = st.session_state.get('history_key')
+        if not history_key:
+            st.info('Create or enter your private key in History first.')
+        else:
+            schema = api(client.schema)
+            if schema and api(client.save_history, history_key, assessment_payload(result, schema), result):
+                st.success('Assessment saved to your private history for up to 90 days.')
+    st.caption('Reports expire after 7 days and require a private access token. Expired records are cleaned up when a new report is saved. Do not include sensitive personal information.')
+    include_gria = st.checkbox('Include a Gria analysis in the PDF (may send inputs to the AI provider)', key='include_gria_report')
+    if include_gria:
+        st.caption('A fresh analysis is generated when the report is saved; it may differ from the explanation above.')
+    if st.button('Prepare PDF report', key='prepare_report'):
+        schema = api(client.schema)
+        if schema:
+            payload = assessment_payload(result, schema)
+            with st.spinner('Preparing the report…'):
+                report = api(client.report, payload, result, include_gria)
+            if report:
+                st.session_state.report_pdf, st.session_state.report_snapshot = report
+                st.session_state.setdefault('saved_reports', []).append({**st.session_state.report_snapshot, 'county': result['county_name'], 'period': result['period']})
+                st.session_state.report_key = (result['county_name'], result['period'], result['model_sha256'], result['model_probability'])
+    if st.session_state.get('report_key') == (result['county_name'], result['period'], result['model_sha256'], result['model_probability']):
+        st.download_button('Download your report', st.session_state.report_pdf, file_name='agrishield-assessment.pdf', mime='application/pdf')
+        if st.button('Delete saved report'):
+            if api(client.delete_report, st.session_state.report_snapshot):
+                st.session_state.report_key = None
+                deleted_id = st.session_state.report_snapshot['id']
+                st.session_state.saved_reports = [item for item in st.session_state.get('saved_reports', []) if item['id'] != deleted_id]
+                st.success('Saved report deleted. Any PDF you already downloaded remains on your device.')
+    previous = st.session_state.get('previous_assessment')
+    if previous and (previous['county_name'], previous['period']) == (result['county_name'], result['period']):
+        with st.expander('Compare with your previous assessment'):
+            st.caption('A what-if comparison of two sets of inputs, recalculated using the current model. This is not a forecast or a causal estimate.')
+            if st.button('Compare assessments'):
+                schema = api(client.schema)
+                if schema:
+                    keys = [item['key'] for item in schema['features']]
+                    def make_payload(item):
+                        return {'county_name': item['county_name'], 'period': item['period'], **{k: item['features'][k] for k in keys}}
+                    comparison = api(client.compare_inputs, make_payload(previous), make_payload(result))
+                    if comparison:
+                        st.metric('Change in proxy score', f"{comparison['alternative']['score']} / 100", delta=f"{comparison['score_delta']:+d} points")
+                        st.caption(comparison['meaning'])
+
+
+inject_style()
 with st.sidebar:
-    st.markdown("## 🛡️ AgriShield Kenya")
-    st.caption(
-        "Geospatial Drought & Forage Early-Warning System (2015–2025 Pipeline + LightGBM Champion + TreeSHAP)"
-    )
-
-    health = client.check_health()
-    mode_badge = "FastAPI Live" if client.last_mode == "api" else "Embedded LightGBM + SHAP"
-    mode_color = "#22c55e" if client.last_mode == "api" else "#3b82f6"
-    st.markdown(
-        f'<div style="margin-bottom:12px;">'
-        f'<span class="agri-badge" style="background:{mode_color}22;color:{mode_color};border:1px solid {mode_color}55;">'
-        f"⚡ {mode_badge}</span></div>",
-        unsafe_allow_html=True,
-    )
-
-    selected_county = st.selectbox(
-        "Select Kenyan County (All 47 Counties)",
-        options=KENYA_COUNTIES,
-        index=KENYA_COUNTIES.index(st.session_state.selected_county)
-        if st.session_state.selected_county in KENYA_COUNTIES
-        else 0,
-    )
-    st.session_state.selected_county = selected_county
-
-    available_months = fetch_available_months()
-    default_m_idx = (
-        available_months.index(st.session_state.selected_month)
-        if st.session_state.selected_month in available_months
-        else (available_months.index("2025-02") if "2025-02" in available_months else 0)
-    )
-    selected_month = st.selectbox(
-        "Observation Period (Year-Month)",
-        options=available_months,
-        index=default_m_idx,
-        help="Select any historical/holdout month. '2025-02' represents the peak dry-season benchmark across Kenya's 47 counties; '2025-12' reflects post-Short Rains greenup.",
-    )
-    st.session_state.selected_month = selected_month
-
-    focus_options = ["combined", "crops", "livestock"]
-    selected_focus = st.selectbox(
-        "Agricultural Focus",
-        options=focus_options,
-        index=focus_options.index(st.session_state.selected_focus),
-        format_func=lambda x: x.capitalize(),
-    )
-    st.session_state.selected_focus = selected_focus
-
-    county_meta = COUNTY_COORDINATES.get(selected_county, {})
-    st.markdown(
-        f"**Region:** `{county_meta.get('region', 'Kenya')}`  \n"
-        f"**Centroid:** `{county_meta.get('lat', 0.0):.2f}°, {county_meta.get('lon', 0.0):.2f}°`"
-    )
-
+    st.markdown('### 🌿 AgriShield')
+    st.caption('AGRICULTURAL INTELLIGENCE')
     st.divider()
-    batch_data = fetch_batch(selected_month)
-    crit_count = sum(1 for c in batch_data.counties if c.risk_level == "CRITICAL")
-    high_count = sum(1 for c in batch_data.counties if c.risk_level == "HIGH")
-    mod_count = sum(1 for c in batch_data.counties if c.risk_level == "MODERATE")
-    safe_count = sum(1 for c in batch_data.counties if c.risk_level == "SAFE")
-    nat_mean = (
-        round(sum(c.risk_score for c in batch_data.counties) / len(batch_data.counties), 1)
-        if batch_data.counties
-        else 0.0
-    )
-
-    st.markdown(f"### 🇰🇪 National Snapshot (`{selected_month}`)")
-    st.caption(f"National Mean Risk Score: **{nat_mean}%** across **{batch_data.county_count} counties**")
-    s_col1, s_col2 = st.columns(2)
-    s_col1.metric("Critical Tier", crit_count)
-    s_col2.metric("High Tier", high_count)
-    s_col3, s_col4 = st.columns(2)
-    s_col3.metric("Moderate Tier", mod_count)
-    s_col4.metric("Safe Tier", safe_count)
-
-
-# ---------------------------------------------------------------------------
-# Fetch Active County Prediction, TreeSHAP Explanation & 12-Month History
-# ---------------------------------------------------------------------------
-active_pred = fetch_county_prediction(selected_county, selected_focus, selected_month)
-explain_data = fetch_county_explain(selected_county, selected_month)
-history_data = fetch_county_history(selected_county, months=12)
-
-# ---------------------------------------------------------------------------
-# Main Layout: Center Workspace (Left/Center) + Gria AI Dock (Right)
-# ---------------------------------------------------------------------------
-workspace_col, gria_col = st.columns([2.25, 1.05], gap="medium")
-
-with workspace_col:
-    st.markdown(
-        f"## 📍 {active_pred.county_name} County — Agro-Climatic Risk & Explainable AI (`{selected_month}`)"
-    )
-
-    # Top KPI Row
-    feats = active_pred.features or {}
-    ndvi_val = feats.get("ndvi_lag1", 0.50)
-    rain_mm = feats.get("rainfall_mm", 65.0)
-    rain_anom = feats.get("rainfall_anomaly", 0.0)
-    soil_m = feats.get("soil_moisture", 0.25)
-    fdi_val = feats.get("forage_dryness_index", 0.20)
-    temp_val = feats.get("temp_mean_c", 24.0)
-
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        render_metric_card(
-            title="Champion Model Risk",
-            value=f"{active_pred.risk_score}%",
-            subtitle=f"Scorer: {active_pred.model_used} ({selected_month})",
-            badge_text=active_pred.risk_level,
-            badge_color=risk_color(active_pred.risk_level),
-        )
-    with k2:
-        render_metric_card(
-            title="#1 TreeSHAP Risk Driver",
-            value=active_pred.main_driver.split("(")[0].strip()[:22],
-            subtitle=active_pred.main_driver,
-            badge_text="SHAP",
-            badge_color="#f97316",
-        )
-    with k3:
-        render_metric_card(
-            title="Forage Dryness & NDVI",
-            value=f"FDI {fdi_val:.2f} | NDVI {ndvi_val:.2f}",
-            subtitle=f"NDVI Anomaly: {feats.get('ndvi_anomaly', 0.0):+.3f} vs mean",
-            badge_text="Pasture",
-            badge_color="#22c55e" if fdi_val < 0.35 else "#eab308",
-        )
-    with k4:
-        render_metric_card(
-            title="Rainfall & Soil Moisture",
-            value=f"{rain_mm:.1f} mm",
-            subtitle=f"Rain Anom: {rain_anom:+.1f} mm | Soil: {soil_m:.2f} m³/m³ | {temp_val:.1f}°C",
-            badge_text="CHIRPS/ERA5",
-            badge_color="#38bdf8",
-        )
-
-    # -----------------------------------------------------------------------
-    # Section 1: National 47-County Geospatial Risk Map & Country Overview Charts
-    # -----------------------------------------------------------------------
-    st.markdown(f"### 🗺️ Kenya 47-County Risk Map & National Charts (`{selected_month}`)")
-    map_tab, nat_charts_tab = st.tabs([
-        "🗺️ Interactive 47-County Choropleth Map",
-        "📊 National Top-15 Risk Ranking & Tier Distribution",
-    ])
-    with map_tab:
-        map_fig = render_map(batch_data.counties, selected_county=selected_county)
-        st.plotly_chart(map_fig, use_container_width=True, config={"displayModeBar": False})
-    with nat_charts_tab:
-        nc1, nc2 = st.columns([1.35, 1.0])
-        with nc1:
-            st.plotly_chart(
-                render_national_top_risk_chart(batch_data.counties, top_n=15),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
-        with nc2:
-            st.plotly_chart(
-                render_risk_tier_donut(batch_data.counties),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
-
-    # -----------------------------------------------------------------------
-    # Section 2: Core Analytical Tabs (Future Sliders, SHAP, Trends, Comparison)
-    # -----------------------------------------------------------------------
-    tab_forecast, tab_shap, tab_trends, tab_compare = st.tabs([
-        "🔮 Future Forecast (Champion Model Sliders)",
-        "🧠 SHAP Explainability (Why the Model Predicts This)",
-        "📈 County Climate Charts & Stress Test",
-        "⚖️ Multi-County & Regional Comparison",
-    ])
-
-    # ---- TAB 1: FUTURE FORECAST (CHAMPION MODEL FEATURE SLIDERS) ----
-    with tab_forecast:
-        st.markdown(
-            f"#### 🔮 Predict the Future for **{selected_county}** Using LightGBM Champion Model Feature Sliders"
-        )
-        st.caption(
-            "All sliders below are initialized to the selected county's real baseline values from the 16-feature "
-            "LightGBM Champion Model (`lightgbm_agrishield_v1.joblib`). Adjust any combination of climate, vegetation, "
-            "and household indicators to forecast future drought and forage risk."
-        )
-
-        default_target_m = (
-            int(selected_month.split("-")[1])
-            if "-" in str(selected_month)
-            else 2
-        )
-
-        fc_top1, fc_top2 = st.columns([1.3, 1.0])
-        with fc_top1:
-            target_month_num = st.slider(
-                "Target Future Month (1 = Jan ... 12 = Dec; updates month_sin & month_cos)",
-                min_value=1,
-                max_value=12,
-                value=default_target_m,
-                step=1,
-                key=f"fc_month_{selected_county}",
-            )
-            st.caption(f"Selected Target Season: **{MONTH_NAMES.get(target_month_num, '')}**")
-        with fc_top2:
-            auto_derive = st.checkbox(
-                "Auto-recalculate linked indices (Forage Dryness, Rain & NDVI Anomalies) from raw sliders",
-                value=False,
-                help="When unchecked, you have direct manual control over every single one of the 16 Champion Model features including Forage Dryness Index and Anomalies. When checked, Forage Dryness and Anomalies auto-update from Rainfall, Soil Moisture, Temperature, and NDVI.",
-                key=f"fc_auto_{selected_county}",
-            )
-
-        st.markdown("##### 🌧️ 1. Top Moisture, Rainfall & Temperature Features")
-        r_col1, r_col2, r_col3 = st.columns(3)
-        with r_col1:
-            s_rainfall_mm = st.slider(
-                "Monthly Rainfall — `rainfall_mm` (mm)",
-                min_value=0.0,
-                max_value=450.0,
-                value=float(round(feats.get("rainfall_mm", 65.0), 1)),
-                step=2.0,
-                key=f"s_rain_{selected_county}_{selected_month}",
-            )
-            s_rain_3m = st.slider(
-                "3-Month Cumulative Rain — `rain_3m_sum` (mm)",
-                min_value=0.0,
-                max_value=1000.0,
-                value=float(round(feats.get("rain_3m_sum", 220.0), 1)),
-                step=5.0,
-                key=f"s_rain3m_{selected_county}_{selected_month}",
-            )
-        with r_col2:
-            s_rain_anom = st.slider(
-                "30-Day Rainfall Anomaly — `rainfall_anomaly` (mm)",
-                min_value=-200.0,
-                max_value=200.0,
-                value=float(round(feats.get("rainfall_anomaly", -10.0), 1)),
-                step=2.0,
-                key=f"s_rain_anom_{selected_county}_{selected_month}",
-            )
-            s_soil_m = st.slider(
-                "Root-Zone Soil Moisture — `soil_moisture` (m³/m³)",
-                min_value=0.03,
-                max_value=0.47,
-                value=float(round(feats.get("soil_moisture", 0.25), 3)),
-                step=0.01,
-                key=f"s_soil_{selected_county}_{selected_month}",
-            )
-        with r_col3:
-            s_temp_c = st.slider(
-                "Land Surface Temperature — `temp_mean_c` (°C)",
-                min_value=10.0,
-                max_value=38.5,
-                value=float(round(feats.get("temp_mean_c", 24.0), 1)),
-                step=0.5,
-                key=f"s_temp_{selected_county}_{selected_month}",
-            )
-            s_fdi = st.slider(
-                "Forage Dryness Index (#1 Model Feature) — `forage_dryness_index`",
-                min_value=0.00,
-                max_value=1.80,
-                value=float(round(feats.get("forage_dryness_index", 0.20), 2)),
-                step=0.02,
-                key=f"s_fdi_{selected_county}_{selected_month}",
-            )
-
-        st.markdown("##### 🌿 2. Pasture & Vegetation Greenness (MODIS NDVI) Features")
-        v_col1, v_col2, v_col3 = st.columns(3)
-        with v_col1:
-            s_ndvi_anom = st.slider(
-                "NDVI Vegetation Anomaly — `ndvi_anomaly`",
-                min_value=-0.25,
-                max_value=0.25,
-                value=float(round(feats.get("ndvi_anomaly", 0.0), 3)),
-                step=0.01,
-                key=f"s_ndvi_anom_{selected_county}_{selected_month}",
-            )
-            s_ndvi_lag1 = st.slider(
-                "Previous Month Greenness — `ndvi_lag1`",
-                min_value=0.15,
-                max_value=0.82,
-                value=float(round(feats.get("ndvi_lag1", 0.50), 2)),
-                step=0.01,
-                key=f"s_ndvi_l1_{selected_county}_{selected_month}",
-            )
-        with v_col2:
-            s_ndvi_lag3 = st.slider(
-                "Greenness 3 Months Ago — `ndvi_lag3`",
-                min_value=0.15,
-                max_value=0.82,
-                value=float(round(feats.get("ndvi_lag3", 0.52), 2)),
-                step=0.01,
-                key=f"s_ndvi_l3_{selected_county}_{selected_month}",
-            )
-            s_ndvi_r3_mean = st.slider(
-                "3-Month Rolling NDVI Mean — `ndvi_roll3_mean`",
-                min_value=0.15,
-                max_value=0.82,
-                value=float(round(feats.get("ndvi_roll3_mean", 0.51), 2)),
-                step=0.01,
-                key=f"s_ndvi_rm_{selected_county}_{selected_month}",
-            )
-        with v_col3:
-            s_ndvi_r3_std = st.slider(
-                "3-Month NDVI Volatility — `ndvi_roll3_std`",
-                min_value=0.00,
-                max_value=0.20,
-                value=float(round(feats.get("ndvi_roll3_std", 0.04), 3)),
-                step=0.005,
-                key=f"s_ndvi_rs_{selected_county}_{selected_month}",
-            )
-
-        with st.expander("🏡 3. Structural County Exposure Sliders (KNBS Census Features)", expanded=False):
-            h_col1, h_col2, h_col3 = st.columns(3)
-            with h_col1:
-                s_farming = st.slider(
-                    "Farming Household Ratio — `farming_ratio`",
-                    min_value=0.02,
-                    max_value=0.85,
-                    value=float(round(feats.get("farming_ratio", 0.55), 2)),
-                    step=0.01,
-                    key=f"s_farm_{selected_county}_{selected_month}",
-                )
-            with h_col2:
-                s_livestock = st.slider(
-                    "Livestock Household Share — `livestock_share`",
-                    min_value=0.35,
-                    max_value=0.88,
-                    value=float(round(feats.get("livestock_share", 0.50), 2)),
-                    step=0.01,
-                    key=f"s_live_{selected_county}_{selected_month}",
-                )
-            with h_col3:
-                s_irrig = st.slider(
-                    "Irrigation Coverage Ratio — `irrigation_ratio`",
-                    min_value=0.01,
-                    max_value=0.30,
-                    value=float(round(feats.get("irrigation_ratio", 0.05), 3)),
-                    step=0.005,
-                    key=f"s_irrig_{selected_county}_{selected_month}",
-                )
-
-        # Run live future forecast with the slider values
-        slider_overrides: Dict[str, Optional[float]] = {
-            "rainfall_mm": s_rainfall_mm,
-            "rain_3m_sum": s_rain_3m,
-            "rainfall_anomaly": None if auto_derive else s_rain_anom,
-            "temp_mean_c": s_temp_c,
-            "soil_moisture": s_soil_m,
-            "ndvi_lag1": s_ndvi_lag1,
-            "ndvi_lag3": s_ndvi_lag3,
-            "ndvi_roll3_mean": s_ndvi_r3_mean,
-            "ndvi_roll3_std": s_ndvi_r3_std,
-            "ndvi_anomaly": None if auto_derive else s_ndvi_anom,
-            "forage_dryness_index": None if auto_derive else s_fdi,
-            "farming_ratio": s_farming,
-            "livestock_share": s_livestock,
-            "irrigation_ratio": s_irrig,
-        }
-
-        fc_result: FutureForecastResult = client.forecast_future(
-            county_name=selected_county,
-            target_month=target_month_num,
-            focus=selected_focus,
-            auto_derive_indices=auto_derive,
-            overrides=slider_overrides,
-        )
-        st.session_state.last_forecast_result = fc_result
-
-        st.markdown("##### 📊 Future Forecast Result vs. County Baseline")
-        res_c1, res_c2, res_c3 = st.columns(3)
-        res_c1.metric(
-            f"Current Baseline ({active_pred.month})",
-            f"{active_pred.risk_score}% ({active_pred.risk_level})",
-        )
-        res_c2.metric(
-            f"Projected Future Risk (2026-{target_month_num:02d})",
-            f"{fc_result.forecast.risk_score}% ({fc_result.forecast.risk_level})",
-            delta=f"{fc_result.score_delta - (fc_result.baseline.risk_score - active_pred.risk_score):+d}% vs. {active_pred.month}",
-            delta_color="inverse",
-        )
-        res_c3.metric(
-            "Top Projected SHAP Driver",
-            fc_result.forecast.main_driver.split("(")[0].strip()[:24],
-        )
-
-        st.info(fc_result.gria_plain_analysis)
-
-        if fc_result.forecast.shap_contributions:
-            st.plotly_chart(
-                render_shap_waterfall_chart(
-                    fc_result.forecast.shap_contributions,
-                    f"{selected_county} — Projected 2026-{target_month_num:02d} Forecast",
-                    top_n=10,
-                ),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
-
-    # ---- TAB 2: SHAP EXPLAINABILITY (LOCAL WATERFALL + GLOBAL IMPORTANCE) ----
-    with tab_shap:
-        st.markdown(
-            f"#### 🧠 TreeSHAP Explainability for **{selected_county}** (`{selected_month}`)"
-        )
-        st.markdown(explain_data.plain_explanation)
-
-        if explain_data.local_shap:
-            st.plotly_chart(
-                render_shap_waterfall_chart(
-                    explain_data.local_shap,
-                    f"{selected_county} ({selected_month})",
-                    top_n=14,
-                ),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
-
-        if explain_data.global_importance:
-            st.plotly_chart(
-                render_global_importance_chart(explain_data.global_importance),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
-
-        with st.expander("📋 View Full 16-Feature Values & Exact TreeSHAP Contributions Table", expanded=False):
-            shap_df = pd.DataFrame([
-                {
-                    "Feature Code": s.feature,
-                    "Human-Readable Feature": s.label,
-                    "County Value": s.value,
-                    "TreeSHAP Impact (log-odds)": s.shap_value,
-                    "Direction": (
-                        "🔺 Increases Drought Risk"
-                        if s.impact_direction == "increases_risk"
-                        else "🟢 Reduces Drought Risk"
-                        if s.impact_direction == "reduces_risk"
-                        else "⚪ Neutral"
-                    ),
-                }
-                for s in explain_data.local_shap
-            ])
-            st.dataframe(shap_df, use_container_width=True, hide_index=True)
-
-    # ---- TAB 3: COUNTY CLIMATE CHARTS & QUICK STRESS TEST ----
-    with tab_trends:
-        st.markdown(
-            f"#### 📈 12-Month Risk & Agro-Climatic Charts for **{selected_county}**"
-        )
-        trend_fig = render_trend_chart(history_data.trend, selected_county)
-        st.plotly_chart(trend_fig, use_container_width=True, config={"displayModeBar": False})
-
-        clim_fig = render_climate_diagnostics_chart(history_data.trend, selected_county)
-        st.plotly_chart(clim_fig, use_container_width=True, config={"displayModeBar": False})
-
+    page = st.radio('WORKSPACE', ['Overview', 'Live conditions', 'Reported maize yields', 'New assessment', 'Historical explorer', 'History', 'Ask Gria'], label_visibility='collapsed')
+    st.divider()
+    st.markdown('**Built for better decisions**')
+    st.caption('Explore agricultural signals with clarity, context and care.')
+    health = api(client.health)
+    if health:
+        if health.get('model_loaded'):
+            st.success('Backend connected · model ready')
+        else:
+            st.warning('Backend connected · model unavailable')
+    saved_reports = st.session_state.get('saved_reports', [])
+    if saved_reports:
         st.divider()
-        st.markdown("##### ⚡ Quick Percentage Shock Stress-Test")
-        sc1, sc2, sc3 = st.columns(3)
-        with sc1:
-            rain_shock = st.slider("Rainfall Shock (%)", -80, 100, -35, step=5)
-        with sc2:
-            temp_shock = st.slider("Temperature Shift (°C)", -3.0, 6.0, 2.0, step=0.5)
-        with sc3:
-            ndvi_shock = st.slider("NDVI Pasture Shift", -0.35, 0.30, -0.12, step=0.02)
+        st.markdown('**Saved in this session**')
+        for saved in list(saved_reports):
+            st.caption(f"{saved['county']} · {saved['period']}")
+            if st.button('Delete saved report', key='delete_' + saved['id']):
+                if api(client.delete_report, saved):
+                    st.session_state.saved_reports = [item for item in saved_reports if item['id'] != saved['id']]
+                    if st.session_state.get('report_snapshot', {}).get('id') == saved['id']:
+                        st.session_state.report_key = None
+                    if st.session_state.get('historical_snapshot', {}).get('id') == saved['id']:
+                        st.session_state.historical_pdf_key = None
+                    st.rerun()
+    st.caption('Research prototype · Kenya')
 
-        sim_res = client.run_scenario(
-            selected_county,
-            rainfall_change_pct=float(rain_shock),
-            temp_change_c=float(temp_shock),
-            ndvi_shock=float(ndvi_shock),
-            month=selected_month,
-        )
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Baseline Risk", f"{sim_res.original.risk_score}% ({sim_res.original.risk_level})")
-        m2.metric(
-            "Shocked Risk",
-            f"{sim_res.scenario.risk_score}% ({sim_res.scenario.risk_level})",
-            delta=f"{sim_res.score_delta:+d}%",
-            delta_color="inverse",
-        )
-        m3.metric("Top Driver Under Shock", sim_res.scenario.main_driver.split("(")[0].strip()[:24])
-        st.caption(sim_res.narrative)
+if page == 'Overview':
+    st.markdown('''<div class="hero"><span class="eyebrow">🌱 &nbsp; AGRICULTURAL INTELLIGENCE FOR KENYA</span><h1>Better insight.<br>Stronger communities.</h1><p>Turn agricultural observations into a clearer picture of vegetation stress, and explore historical patterns across Kenya.</p></div>''', unsafe_allow_html=True)
+    st.markdown('<div class="section-label">YOUR WORKSPACE</div>', unsafe_allow_html=True)
+    st.subheader('A clearer view of the land')
+    st.markdown('<p class="intro">Explore the tools designed to help you understand the signals behind changing conditions.</p>', unsafe_allow_html=True)
+    cards = st.columns(3)
+    for col, icon, title, desc in zip(cards, ['🌾', '🗺️', '✦'], ['Assess your observations', 'Explore historical patterns', 'Ask Gria'], ['Enter your own measurements and receive a model score.', 'Compare the project’s historical county data for a selected month.', 'Ask questions about a selected historical county assessment.']):
+        with col:
+            st.markdown(f'<div class="feature-card"><div class="icon">{icon}</div><strong>{title}</strong><span>{desc}</span></div>', unsafe_allow_html=True)
+    st.write('')
+    disclaimer()
+    st.markdown('#### How to get started')
+    st.write('Choose **New assessment** in the sidebar, select a county and month, and enter the requested measurements. Every value sent to the model is shown with your result.')
 
-    # ---- TAB 4: MULTI-COUNTY & REGIONAL COMPARISON ----
-    with tab_compare:
-        default_peers = [selected_county] + [
-            c for c in ["Turkana", "Marsabit", "Garissa", "Machakos", "Nakuru", "Uasin Gishu"]
-            if c != selected_county
-        ][:4]
-        compare_selection = st.multiselect(
-            "Select Counties to Compare Side-by-Side (2–10)",
-            options=KENYA_COUNTIES,
-            default=default_peers,
-            max_selections=10,
-        )
-        if len(compare_selection) >= 2:
-            comp_res = client.compare_counties(compare_selection, month=selected_month)
-            st.plotly_chart(
-                render_comparison_chart(comp_res),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
-            st.caption(
-                f"Highest risk: **{comp_res.highest_risk.county_name}** ({comp_res.highest_risk.risk_score}% — {comp_res.highest_risk.main_driver}) | "
-                f"Lowest risk: **{comp_res.lowest_risk.county_name}** ({comp_res.lowest_risk.risk_score}%)"
-            )
+elif page == 'Live conditions':
+    page_heading('LIVE WEATHER', 'Current conditions across Kenya', 'Current weather at one representative point in each county, updated by Open-Meteo.')
+    st.warning('Weather is modelled for a point, not a county average. This is not a live crop or forage risk map, field measurement, forecast of losses, or official warning.')
+    @st.fragment(run_every=600)
+    def live_map():
+        data = api(client.live_weather)
+        if not data:
+            st.info('Live conditions are unavailable. The app will not substitute historical data. Try again later.')
+            return
+        df = pd.DataFrame(data['observations'])
+        st.caption(f"Source: Open-Meteo · Last retrieved: {data['retrieved_at']} · Model times: {df['time_utc'].min()} to {df['time_utc'].max()} · Updates every 10 minutes")
+        st.caption('Open-Meteo current conditions come from weather models; the free API is intended for non-commercial use. See https://open-meteo.com/ for attribution and terms.')
+        st.metric('County locations available', f"{len(df)} / 47")
+        options = {'Temperature (°C)': 'temperature_c', 'Relative humidity (%)': 'humidity_percent', 'Precipitation (mm per model interval)': 'precipitation_mm', 'Wind speed (km/h)': 'wind_kmh'}
+        selected = st.selectbox('Weather indicator', list(options))
+        column = options[selected]
+        geo = json.loads((ASSETS / 'kenya_counties.geojson').read_text())
+        fig = go.Figure(go.Choropleth(geojson=geo, locations=[x['properties']['county'] for x in geo['features']], z=[0] * len(geo['features']),
+                                      featureidkey='properties.county', colorscale=[[0, '#edf4e9'], [1, '#edf4e9']], showscale=False,
+                                      marker_line_color='#a9bca9', marker_line_width=.5, hoverinfo='skip'))
+        fig.add_trace(go.Scattergeo(lat=df['latitude'], lon=df['longitude'], text=df['county'], mode='markers',
+                                    customdata=df[['temperature_c', 'humidity_percent', 'precipitation_mm', 'wind_kmh', 'time_utc']],
+                                    marker=dict(size=10, color=df[column], colorscale='YlGnBu', colorbar=dict(title=selected), line=dict(color='#173e2c', width=.5)),
+                                    hovertemplate='<b>%{text}</b><br>Temperature: %{customdata[0]} °C<br>Humidity: %{customdata[1]}%<br>Precipitation: %{customdata[2]} mm per interval<br>Wind: %{customdata[3]} km/h<br>Model time: %{customdata[4]}<extra></extra>'))
+        fig.update_geos(fitbounds='locations', visible=False)
+        fig.update_layout(height=540, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(df.rename(columns={'county': 'County', 'temperature_c': 'Temperature °C', 'humidity_percent': 'Humidity %', 'precipitation_mm': 'Precipitation mm / interval', 'wind_kmh': 'Wind km/h', 'time_utc': 'Model time UTC', 'interval_seconds': 'Interval seconds'}), hide_index=True, use_container_width=True)
+        st.caption('Coordinates are representative points from the project, not field stations. Precipitation is the amount over the provider’s stated model interval.')
+    live_map()
 
-        st.divider()
-        default_reg = county_meta.get("region", KENYA_REGIONS[0])
-        selected_region = st.selectbox(
-            "Regional Aggregation (8 Kenyan Administrative Regions)",
-            options=KENYA_REGIONS,
-            index=KENYA_REGIONS.index(default_reg) if default_reg in KENYA_REGIONS else 0,
-        )
-        reg_res = client.get_region_summary(selected_region, month=selected_month)
-        r1, r2, r3 = st.columns(3)
-        r1.metric("Region", reg_res.region_name)
-        r2.metric("Counties in Region", reg_res.county_count)
-        r3.metric("Regional Mean Risk", f"{reg_res.average_risk:.1f}% ({reg_res.risk_level})")
+elif page == 'Reported maize yields':
+    page_heading('REPORTED CROP OUTCOMES', 'Maize production by county', 'Explore reported historical maize yields, separate from the vegetation proxy.')
+    st.warning('These are historical reported annual maize yields, not a live risk map or a model prediction. The third-party workbook is attributed to Kilimodata/KNBS but its primary source has not been independently verified.')
+    years = api(client.maize_years)
+    if years:
+        year = st.selectbox('Harvest year', years)
+        data = api(client.maize_outcomes, year)
+        if data:
+            frame = pd.DataFrame(data['observations'])
+            valid = frame[frame['quality_flag'] == 'ok']
+            st.metric('Counties with usable records', f'{len(valid)} / 47')
+            if len(valid) < 47:
+                st.info('Some reported values are inconsistent or lack harvested area and are not shown as yields. See the table for flags.')
+            geo = json.loads((ASSETS / 'kenya_counties.geojson').read_text())
+            for feature in geo['features']:
+                feature['properties']['county'] = feature['properties']['county'].replace('-', ' ')
+            # Create dot indicators for each county with county names and colors matching the Score scale logic (but applied to yield tonnes/ha)
+            # Note: Score scale (0-100) is for risk scores, while yields are tonnes/ha. We use YlGn scale for yields to be realistic and honest.
+            # To match the "dot indicators" request, we use Scattergeo instead of choropleth.
+            # Colors are mapped to yield_tonnes_per_ha using YlGn scale (realistic for yields).
+            # We use a custom scale that visually resembles the Score scale's progression but maps to tonnes/ha to avoid fabrication.
+            # Score scale colors: ['#d9eacb', '#a3c37d', '#e3c078', '#b15f3f'] (Lower, Moderate, Elevated, High risk)
+            # Yield scale (YlGn): ['#ffffcc', '#a1d99b', '#31a354'] (Low, Medium, High yield)
+            # We will use YlGn for realism (yields) but use dot indicators as requested.
+            fig = go.Figure(data=go.Scattergeo(
+                lon=[feature['properties'].get('longitude', 0) for feature in geo['features'] if feature['properties']['county'] in valid['county'].values],
+                lat=[feature['properties'].get('latitude', 0) for feature in geo['features'] if feature['properties']['county'] in valid['county'].values],
+                text=[row['county'] for _, row in valid.iterrows()],
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    color=valid['yield_tonnes_per_ha'],
+                    colorscale='YlGn',
+                    colorbar=dict(title='Reported yield (tonnes/ha)'),
+                    showscale=True,
+                    line=dict(width=1, color='DarkSlateGrey')
+                ),
+                hoverinfo='text+marker',
+                hovertext=[f"County: {row['county']}<br>Yield: {row['yield_tonnes_per_ha']:.2f} t/ha<br>Area: {row['harvested_area_ha']:.0f} ha" for _, row in valid.iterrows()],
+                name='Reported Maize Yields'
+            ))
+            # Align the geojson counties with the scattergeo points by ensuring the map projection fits the points
+            fig.update_geos(fitbounds='locations', visible=False)
+            fig.update_layout(height=500, margin=dict(l=0, r=0, t=5, b=0), paper_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption('Dot indicators represent reported county yields (tonnes/ha), not crop failure or risk scores. Colours match the yield scale (YlGn). Yields depend on crop type, planting, area, weather and other factors.')
+            st.dataframe(frame.rename(columns={'county': 'County', 'yield_tonnes_per_ha': 'Yield (tonnes/ha)', 'harvested_area_ha': 'Harvested area (ha)', 'production_tonnes': 'Production (tonnes)', 'quality_flag': 'Quality flag'}), hide_index=True, use_container_width=True)
+            st.markdown(f"Sources: [KNBS catalogue]({data['source_page']}) · [workbook mirror]({data['mirror']}). 2019 is not present in this workbook.")
 
-        reg_df = pd.DataFrame([
-            {
-                "County": c.county_name,
-                "Risk Score (%)": c.risk_score,
-                "Risk Tier": c.risk_level,
-                "Primary TreeSHAP Driver": c.main_driver,
+elif page == 'New assessment':
+    page_heading('01 / YOUR OBSERVATIONS', 'Create an assessment', 'Bring your own observations. All fields are required so the model never fills gaps with invented values.')
+    disclaimer()
+    schema = api(client.schema)
+    counties = api(client.counties)
+    if schema is not None and counties is not None:
+        manual, raw_tab, csv_tab = st.tabs(['✎  Enter model inputs', '🌱  Calculate from measurements', '↑  Upload a CSV'])
+        with manual:
+            st.caption('A fraction is a value from 0 to 1: for example, 0.25 means 25%. Use measurements and definitions consistent with the model training data.')
+            with st.form('assessment_form'):
+                left, right = st.columns(2)
+                county = left.selectbox('County', counties, index=None, placeholder='Choose a county')
+                date = right.date_input('Observation month', value=None, help='Choose any day in the month your measurements describe.')
+                values = {}
+                for group in ['Weather & soil', 'Vegetation', 'County livelihoods']:
+                    st.markdown(f'#### {group}')
+                    fields = [f for f in schema['features'] if f['group'] == group]
+                    for i in range(0, len(fields), 2):
+                        cols = st.columns(2)
+                        for col, field in zip(cols, fields[i:i+2]):
+                            values[field['key']] = col.number_input(f"{field['label']} ({field['unit']})", min_value=float(field['minimum']), max_value=float(field['maximum']), value=None, step=0.01, format='%.6f', help=field['help'], key='feature_' + field['key'])
+                st.caption('The model also uses two seasonal values. The backend calculates these from your selected month; you do not need to enter them.')
+                submitted = st.form_submit_button('Generate assessment  →', type='primary', use_container_width=True)
+            if submitted:
+                st.session_state.assessment = None
+                st.session_state.report_key = None
+                missing = [f['label'] for f in schema['features'] if values[f['key']] is None]
+                if not county or not date or missing:
+                    st.error('Please choose a county and month and complete every measurement.' + (' Missing: ' + ', '.join(missing) if missing else ''))
+                else:
+                    payload = {'county_name': county, 'period': date.strftime('%Y-%m'), **values}
+                    with st.spinner('Evaluating your observations…'):
+                        result = api(client.predict, payload)
+                    if result:
+                        remember_assessment(result)
+                        st.session_state.report_key = None
+                        # Gria AI analysis and branded PDF report for the assessment
+                        st.divider()
+                        st.markdown('#### 🤖 Gria AI Analysis & Branded Report')
+                        st.caption('The champion model predicts the score based on your assessment info. Gria AI can analyse this output and generate a branded PDF report.')
+                        x, y = st.columns(2)
+                        if x.button('Ask Gria to analyse this assessment'):
+                            with st.spinner('Gria is analysing the model output…'):
+                                try:
+                                    analyzed = api(client.analyze_assessment, payload, result)
+                                    st.session_state.assessment_analysis = analyzed['analysis']
+                                    st.success('Analysis complete.')
+                                except Exception as e:
+                                    st.error(f'Gria analysis failed: {e}')
+                        if y.button('Prepare branded PDF report'):
+                            with st.spinner('Generating branded report…'):
+                                try:
+                                    pdf, snapshot = api(client.report, payload, result, include_gria=True)
+                                    st.session_state.assessment_pdf = pdf
+                                    st.session_state.assessment_snapshot = snapshot
+                                    st.session_state.assessment_pdf_key = (county, date.strftime('%Y-%m'))
+                                    st.success('Report generated successfully.')
+                                except Exception as e:
+                                    st.error(f'Report generation failed: {e}')
+                        analysis = st.session_state.get('assessment_analysis')
+                        if analysis:
+                            st.markdown('#### Gria’s analysis of the assessment')
+                            st.markdown(analysis)
+                        if st.session_state.get('assessment_pdf_key') == (county, date.strftime('%Y-%m')):
+                            st.download_button('Download assessment PDF', st.session_state.assessment_pdf, file_name='agrishield-assessment-report.pdf', mime='application/pdf')
+        with raw_tab:
+            st.write('Have the original measurements? Enter them below and the backend will calculate the indicators using the same formulas as model training.')
+            st.caption('For the normal rainfall, use this county and calendar month’s 2015–2023 average. For normal NDVI and its variation, use the county’s 2015–2023 mean and sample standard deviation. The same training sources and definitions are needed for comparable results.')
+            raw_groups = {
+                'Rain, temperature & soil': [
+                    ('rainfall_mm', 'Rainfall this month (mm)', 0., 5000.),
+                    ('rain_previous_1', 'Rainfall last month (mm)', 0., 5000.),
+                    ('rain_previous_2', 'Rainfall two months ago (mm)', 0., 5000.),
+                    ('rain_normal', 'Normal rainfall for this calendar month (mm)', 0., 5000.),
+                    ('temp_mean_c', 'Average temperature this month (°C)', -20., 60.),
+                    ('soil_moisture', 'Average soil moisture this month (m³/m³)', 0., 1.),
+                ],
+                'Vegetation greenness': [
+                    ('ndvi_lag1', 'NDVI last month', -1., 1.),
+                    ('ndvi_lag2', 'NDVI two months ago', -1., 1.),
+                    ('ndvi_lag3', 'NDVI three months ago', -1., 1.),
+                    ('ndvi_historical_mean', 'County’s historical average NDVI', -1., 1.),
+                    ('ndvi_historical_std', 'County’s historical NDVI variation', 0., 2.),
+                ],
+                'County households': [
+                    ('total_households', 'Total households', 1, 100000000),
+                    ('farming_households', 'Households farming', 0, 100000000),
+                    ('crop_households', 'Households growing crops', 0, 100000000),
+                    ('livestock_households', 'Households keeping livestock', 0, 100000000),
+                    ('irrigation_households', 'Farming households using irrigation', 0, 100000000),
+                ],
             }
-            for c in sorted(reg_res.counties, key=lambda x: x.risk_score, reverse=True)
-        ])
-        st.dataframe(reg_df, use_container_width=True, hide_index=True)
+            with st.form('measurement_form'):
+                a, b = st.columns(2)
+                raw_county = a.selectbox('County', counties, index=None, placeholder='Choose a county', key='raw_county')
+                raw_date = b.date_input('Observation month', value=None, key='raw_date')
+                raw_values = {}
+                for group, fields in raw_groups.items():
+                    st.markdown(f'#### {group}')
+                    for i in range(0, len(fields), 2):
+                        for col, (key, label, minimum, maximum) in zip(st.columns(2), fields[i:i+2]):
+                            if isinstance(minimum, int):
+                                raw_values[key] = col.number_input(label, min_value=minimum, max_value=maximum, value=None, step=1, key='raw_' + key)
+                            else:
+                                raw_values[key] = col.number_input(label, min_value=minimum, max_value=maximum, value=None, step=0.01, format='%.6f', key='raw_' + key)
+                raw_submitted = st.form_submit_button('Calculate and assess  →', type='primary', use_container_width=True)
+            if raw_submitted:
+                st.session_state.assessment = None
+                st.session_state.report_key = None
+                if not raw_county or not raw_date or any(v is None for v in raw_values.values()):
+                    st.error('Please choose a county and month and complete every measurement.')
+                else:
+                    payload = {'county_name': raw_county, 'period': raw_date.strftime('%Y-%m'), **raw_values}
+                    with st.spinner('Calculating indicators and evaluating your observations…'):
+                        result = api(client.predict_measurements, payload)
+                    if result:
+                        remember_assessment(result)
+        with csv_tab:
+            st.write('Upload a UTF-8 CSV containing **one complete observation**. Column names and units must match the template. No missing values are filled in automatically.')
+            buffer = io.StringIO()
+            csv.writer(buffer).writerow(schema['csv_columns'])
+            st.download_button('Download empty CSV template', buffer.getvalue(), 'agrishield-template.csv', 'text/csv')
+            with st.form('csv_form'):
+                upload = st.file_uploader('Choose a CSV file', type=['csv'])
+                csv_submit = st.form_submit_button('Assess uploaded data', type='primary')
+            if csv_submit:
+                st.session_state.assessment = None
+                st.session_state.report_key = None
+                if upload is None:
+                    st.error('Choose a CSV file first.')
+                else:
+                    with st.spinner('Checking and evaluating your file…'):
+                        result = api(client.predict_csv, upload.name, upload.getvalue())
+                    if result:
+                        remember_assessment(result)
+                        st.session_state.report_key = None
+        if st.session_state.get('assessment'):
+            st.divider()
+            show_result(st.session_state.assessment)
 
+elif page == 'Historical explorer':
+    page_heading('02 / HISTORICAL DATA', 'Explore Kenya', 'Compare scores calculated from the project’s historical county-month dataset. The dataset includes proxy and imputed values; this is not a live conditions map.')
+    disclaimer()
+    months = api(client.historical_months)
+    if months is not None:
+        if not months:
+            st.warning('No historical dataset is available on the backend. Ask the administrator to provision the processed data.')
+        else:
+            month = st.selectbox('Historical observation month', sorted(months, reverse=True))
+            data = api(client.historical, month)
+            if data:
+                df = pd.DataFrame(data['observations'])
+                a, b, c = st.columns(3)
+                a.metric('Counties with observations', len(df))
+                b.metric('Average model score', f"{df['score'].mean():.1f} / 100")
+                c.metric('Selected month', month)
+                st.caption('The average is an unweighted mean of available county scores; it is not a regional impact estimate.')
+                st.info(f"Historical data only · Latest packaged month: {max(months)}. This map is not connected to a live feed.")
+                if len(df) < 47:
+                    st.warning(f"Only {len(df)} of 47 counties have complete observations for this month; missing counties are not scored.")
+                geo = json.loads((ASSETS / 'kenya_counties.geojson').read_text())
+                for feature in geo['features']:
+                    feature['properties']['county'] = feature['properties']['county'].replace('-', ' ')
+                fig = go.Figure(data=go.Scattergeo(
+                    lon=[feature['properties'].get('longitude', 0) for feature in geo['features'] if feature['properties']['county'] in df['county'].values],
+                    lat=[feature['properties'].get('latitude', 0) for feature in geo['features'] if feature['properties']['county'] in df['county'].values],
+                    text=[row['county'] for _, row in df.iterrows()],
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        color=df['score'],
+                        colorscale=['#d9eacb', '#a3c37d', '#e3c078', '#b15f3f'],
+                        cmin=0, cmax=100,
+                        colorbar=dict(title='Score'),
+                        showscale=True,
+                        line=dict(width=1, color='DarkSlateGrey')
+                    ),
+                    hoverinfo='text+marker',
+                    hovertext=[f"County: {row['county']}<br>Score: {row['score']:.1f}/100<br>Band: {row['band']}" for _, row in df.iterrows()],
+                    name='County Risk Scores'
+                ))
+                fig.update_geos(fitbounds='locations', visible=False)
+                fig.update_layout(height=500, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig, use_container_width=True)
+                counts = df['band'].value_counts().reindex(['Lower', 'Moderate', 'Elevated', 'High'], fill_value=0).reset_index()
+                counts.columns = ['Score band', 'Counties']
+                st.markdown('#### Counties by score band')
+                bands = px.bar(counts, x='Score band', y='Counties', color='Score band', color_discrete_map={'Lower': '#8cb77d', 'Moderate': '#d7bc70', 'Elevated': '#ce8a54', 'High': '#ac5841'})
+                bands.update_layout(height=260, showlegend=False, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(bands, use_container_width=True)
+                st.caption('Bands are descriptive groupings of model scores, not official risk or warning categories.')
+                region = st.selectbox('Filter table by region', ['All regions'] + sorted(df['region'].dropna().unique().tolist()))
+                display = df if region == 'All regions' else df[df['region'] == region]
+                st.dataframe(display.sort_values('score', ascending=False).rename(columns={'county': 'County', 'region': 'Region', 'score': 'Score / 100', 'band': 'Score band'}), hide_index=True, use_container_width=True)
+                st.caption(f"Historical data · {month} · Model: {data['model_used']}. Scores reflect a research proxy, not verified losses.")
+                st.markdown('#### Compare counties')
+                chosen = st.multiselect('Choose counties to compare', sorted(df['county'].tolist()), max_selections=10, placeholder='Select up to ten counties')
+                if chosen:
+                    subset = df[df['county'].isin(chosen)].sort_values('score')
+                    comparison = px.bar(subset, x='score', y='county', orientation='h', color='score', color_continuous_scale=['#aacb91', '#d8b77a', '#ac6547'], range_color=(0, 100), labels={'score': 'Model score / 100', 'county': 'County'})
+                    comparison.update_layout(height=max(230, len(chosen) * 38 + 100), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                    st.plotly_chart(comparison, use_container_width=True)
+                st.markdown('#### County history')
+                trend_county = st.selectbox('County for the historical trend and explanation', sorted(df['county'].tolist()))
+                if trend_county:
+                    trend = api(client.historical_trends, trend_county, month)
+                    if trend:
+                        series = pd.DataFrame(trend['observations'])
+                        line = px.line(series, x='period', y='score', markers=True, labels={'period': 'Observation month', 'score': 'Model score / 100'})
+                        line.update_traces(line_color='#39744a')
+                        line.update_layout(height=280, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis_range=[0, 100])
+                        st.plotly_chart(line, use_container_width=True)
+                        st.caption('Up to 12 historical observations ending in the selected month. Scores are recomputed by the backend from the stored feature rows.')
+                        rain_tab, vegetation_tab, moisture_tab = st.tabs(['Rainfall', 'Vegetation', 'Soil moisture'])
+                        for tab, col, title, color in [(rain_tab, 'rainfall_mm', 'Rainfall (mm)', '#39744a'), (vegetation_tab, 'ndvi_lag1', 'Previous-month NDVI', '#78a159'), (moisture_tab, 'soil_moisture', 'Soil moisture (m³/m³)', '#4a8a9b')]:
+                            with tab:
+                                chart = px.line(series, x='period', y=col, markers=True, labels={'period': 'Observation month', col: title})
+                                chart.update_traces(line_color=color)
+                                chart.update_layout(height=250, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                                st.plotly_chart(chart, use_container_width=True, key='history_' + col)
+                        if trend_county:
+                            detail = api(client.historical_detail, trend_county, month)
+                            if detail:
+                                st.markdown('#### What influenced this county score?')
+                                show_shap(detail.get('explanation'), 'historical_shap')
+                                st.caption('The following actions may send historical model evidence to the configured AI provider. No document content is included.')
+                                x, y = st.columns(2)
+                                if x.button('Ask Gria to analyze this county'):
+                                    with st.spinner('Analyzing county evidence…'):
+                                        analyzed = api(client.analyze_history, trend_county, month)
+                                    if analyzed:
+                                        st.session_state.history_analysis = {'key': (trend_county, month), 'analysis': analyzed['analysis']}
+                                if st.button('Save this county assessment to history'):
+                                    history_key = st.session_state.get('history_key')
+                                    if not history_key:
+                                        st.info('Create or enter your private key in History first.')
+                                    elif api(client.save_historical_history, history_key, trend_county, month):
+                                        st.success('Historical county assessment saved for up to 90 days.')
+                                if y.button('Prepare county PDF with Gria'):
+                                    with st.spinner('Preparing the county report…'):
+                                        report = api(client.historical_report, trend_county, month)
+                                    if report:
+                                        st.session_state.historical_pdf, snapshot = report
+                                        st.session_state.historical_snapshot = snapshot
+                                        st.session_state.historical_pdf_key = (trend_county, month)
+                                        st.session_state.setdefault('saved_reports', []).append({**snapshot, 'county': trend_county, 'period': month})
+                                analysis = st.session_state.get('history_analysis')
+                                if analysis and analysis['key'] == (trend_county, month):
+                                    show_analysis(analysis['analysis'])
+                                if st.session_state.get('historical_pdf_key') == (trend_county, month):
+                                    st.download_button('Download county PDF', st.session_state.historical_pdf, file_name='agrishield-county-report.pdf', mime='application/pdf')
+                        with st.expander('See historical weather and vegetation inputs'):
+                            st.dataframe(series.rename(columns={'period': 'Month', 'score': 'Score / 100', 'rainfall_mm': 'Rainfall (mm)', 'ndvi_lag1': 'Previous month NDVI', 'soil_moisture': 'Soil moisture (m³/m³)'}), hide_index=True, use_container_width=True)
 
-# ---------------------------------------------------------------------------
-# Right Column: Gria Agentic AI Hub (Simplify, Upload & Compare, Interactive Chat)
-# ---------------------------------------------------------------------------
-with gria_col:
-    st.markdown("## 🤖 Gria Agentic AI Hub")
-    st.caption(
-        "1. Simplifies LightGBM & SHAP outputs into everyday language • "
-        "2. Reads, converts & compares uploaded files against the model baseline • "
-        "3. Interactive County AI Chat"
-    )
-
-    # ---- 1. GRIA PLAIN-LANGUAGE MODEL SIMPLIFIER ----
-    with st.expander("📖 1. Gria's Plain-English Explanation of Current Output", expanded=True):
-        st.markdown(
-            active_pred.plain_summary
-            or explain_data.plain_explanation
-        )
-
-    # ---- 2. UPLOAD, CONVERT & COMPARE YOUR DATA AGAINST THE MODEL ----
-    with st.expander("📂 2. Upload, Convert & Compare Your Data vs. Model", expanded=True):
-        st.caption(
-            "Upload **CSV, Excel (.xlsx), PDF, Word (.docx), or Satellite/Canopy Images**. "
-            "Gria automatically extracts & converts your data into the **16-feature Champion Model schema**, "
-            "scores it with LightGBM + TreeSHAP, compares it against the county's official baseline, "
-            "and draws actionable recommendations."
-        )
-
-        # Provide a 1-click sample CSV template pre-filled with the active county's fields so users can test immediately
-        sample_csv = (
-            "county,month,rainfall_mm,rain_3m_sum,rainfall_anomaly,temp_mean_c,soil_moisture,ndvi_lag1,forage_dryness_index\n"
-            f"{selected_county},2,{max(5.0, round(rain_mm * 0.45, 1))},{max(20.0, round(feats.get('rain_3m_sum', 120.0) * 0.5, 1))},"
-            f"-42.5,{round(temp_val + 2.5, 1)},{max(0.06, round(soil_m - 0.08, 3))},{max(0.18, round(ndvi_val - 0.11, 3))},{round(fdi_val + 0.35, 2)}\n"
-        )
-        st.download_button(
-            label=f"⬇️ Download Sample {selected_county} Field CSV Template",
-            data=sample_csv.encode("utf-8"),
-            file_name=f"{selected_county.lower().replace(' ', '_')}_field_observation.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-
-        uploaded_file = st.file_uploader(
-            "Drop Field CSV, Excel, PDF, DOCX, or Image",
-            type=["csv", "xlsx", "xls", "pdf", "docx", "png", "jpg", "jpeg"],
-            key="gria_uploader",
-        )
-        if uploaded_file is not None:
-            up_res: UploadResult = client.upload_file(
-                uploaded_file.name,
-                uploaded_file.getvalue(),
-                mime_type=uploaded_file.type or "application/octet-stream",
-            )
-            st.session_state.last_upload_result = up_res
-            st.session_state.uploaded_name = up_res.file_name
-            st.session_state.uploaded_context = (
-                f"{up_res.comparison_narrative or up_res.gria_summary} "
-                f"Suggestions: {' | '.join(up_res.suggestions)}"
-            )
-
-            u1, u2 = st.columns(2)
-            base_s = (
-                up_res.baseline_risk_score
-                if up_res.baseline_risk_score is not None
-                else float(active_pred.risk_score)
-            )
-            delta_s = (
-                up_res.score_delta_vs_baseline
-                if up_res.score_delta_vs_baseline is not None
-                else (up_res.risk_score - base_s)
-            )
-            u1.metric(
-                "Uploaded Data Risk",
-                f"{up_res.risk_score:.0f}% ({up_res.risk_level})",
-                delta=f"{delta_s:+.0f}% vs. Baseline",
-                delta_color="inverse",
-            )
-            u2.metric(
-                "Official County Baseline",
-                f"{base_s:.0f}% ({up_res.baseline_risk_level or active_pred.risk_level})",
-            )
-
-            st.plotly_chart(
-                render_upload_comparison_chart(up_res, active_pred),
-                use_container_width=True,
-                config={"displayModeBar": False},
-            )
-
-            st.markdown("**🔍 Gria's Data Conversion & Comparison Summary:**")
-            st.markdown(up_res.comparison_narrative or up_res.gria_summary)
-
-            if up_res.suggestions:
-                st.markdown("**💡 Gria's Recommendations & Action Items from Your File:**")
-                for item in up_res.suggestions:
-                    st.markdown(f"- {item}")
-
-            if up_res.converted_features:
-                with st.expander("🔢 View Converted 16-Feature Champion Vector"):
-                    conv_df = pd.DataFrame([
-                        {
-                            "Feature": k,
-                            "Uploaded (Converted)": round(float(v), 4),
-                            "County Baseline": round(float((active_pred.features or {}).get(k, 0.0)), 4),
-                        }
-                        for k, v in up_res.converted_features.items()
-                    ])
-                    st.dataframe(conv_df, use_container_width=True, hide_index=True)
-
-    # ---- 3. INTERACTIVE CHAT WITH GRIA ----
-    st.markdown("#### 💬 3. Chat & Interact with Gria AI")
-    st.caption("Click a quick question below or type any question about counties, SHAP drivers, or your uploaded file:")
-
-    q_col1, q_col2 = st.columns(2)
-    quick_prompt: Optional[str] = None
-    with q_col1:
-        if st.button("🗣️ Simplify County Prediction", use_container_width=True):
-            quick_prompt = (
-                f"Please explain {selected_county} County's prediction ({active_pred.risk_score}% {active_pred.risk_level}) "
-                f"and its top SHAP drivers in simple everyday language for local farmers."
-            )
-    with q_col2:
-        if st.button("📊 Compare Uploaded vs Model", use_container_width=True):
-            if st.session_state.last_upload_result is not None:
-                quick_prompt = (
-                    f"Compare my uploaded file ({st.session_state.uploaded_name}) against {selected_county}'s "
-                    f"official model output and give me your top crop and livestock recommendations."
-                )
+elif page == 'History':
+    page_heading('SAVED ASSESSMENTS', 'Your private history', 'Return to assessments you chose to save and download their original results.')
+    st.info('History is opt-in and kept for up to 90 days. Anyone with your private key can access and delete your history. Save the key securely: it cannot be recovered if lost. Existing reports made before you save an assessment here are not automatically imported.')
+    if st.button('Create a new private history key'):
+        created = api(client.new_history_key)
+        if created:
+            st.session_state.history_key = created['key']
+            st.session_state.history_key_created = True
+    if st.session_state.get('history_key_created') and st.session_state.get('history_key'):
+        st.code(st.session_state.history_key)
+        st.download_button('Download my private history key', st.session_state.history_key, file_name='agrishield-private-history-key.txt', mime='text/plain')
+        st.caption('Store this key somewhere safe. Treat it like a password.')
+    with st.form('history_key_form'):
+        entered_key = st.text_input('Enter an existing private history key', type='password')
+        open_history = st.form_submit_button('Open history')
+    if open_history:
+        if not entered_key:
+            st.error('Enter your private history key.')
+        else:
+            st.session_state.history_key = entered_key.strip()
+            st.session_state.history_key_created = False
+    if st.session_state.get('history_key'):
+        if st.button('Lock history on this device'):
+            st.session_state.history_key = None
+            st.session_state.history_key_created = False
+            st.rerun()
+        history = api(client.history, st.session_state.history_key)
+        if history:
+            records = history['records']
+            if not records:
+                st.info('No saved assessments. Use “Save assessment to history” on an assessment or in the historical explorer.')
             else:
-                quick_prompt = (
-                    f"What are the most important actions crop and livestock farmers in {selected_county} "
-                    f"should take right now based on the model's SHAP drivers?"
-                )
+                st.caption('Showing up to the latest 500 saved assessments; expired records cannot be accessed.')
+                choices = {r['id']: f"{r['county']} · {r['period']} · {r['score']}/100 · saved {r['created_at']}" for r in records}
+                selected_record = st.selectbox('Select a saved assessment', list(choices), format_func=lambda ident: choices[ident])
+                saved = api(client.history_record, st.session_state.history_key, selected_record)
+                if saved:
+                    st.metric('Saved score', f"{saved['score']}/100", help='The original saved result, not a new calculation.')
+                    st.caption(f"{saved['county_name']} · {saved['period']} · {saved.get('data_source', '')}")
+                    show_shap(saved.get('explanation'), 'saved_history_shap')
+                    with st.expander('Saved model inputs and details'):
+                        st.dataframe(pd.DataFrame([{'Input': k, 'Value': v} for k, v in saved['features'].items()]), hide_index=True, use_container_width=True)
+                        st.caption(f"Model {saved['model_used']} · SHA-256 {saved.get('model_sha256', 'unavailable')}")
+                    if st.button('Prepare saved PDF'):
+                        pdf = api(client.history_pdf, st.session_state.history_key, selected_record)
+                        if pdf:
+                            st.session_state.history_pdf = pdf
+                            st.session_state.history_pdf_id = selected_record
+                    if st.session_state.get('history_pdf_id') == selected_record:
+                        st.download_button('Download saved PDF', st.session_state.history_pdf, file_name='agrishield-history.pdf', mime='application/pdf')
+                    if st.button('Delete this saved assessment'):
+                        if api(client.delete_history, st.session_state.history_key, selected_record):
+                            st.session_state.history_pdf_id = None
+                            st.rerun()
 
-    chat_box = st.container(height=360)
-    with chat_box:
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-
-    typed_prompt = st.chat_input(f"Ask Gria about {selected_county}, SHAP drivers, or your uploaded data...")
-    user_prompt = quick_prompt or typed_prompt
-
-    if user_prompt:
-        st.session_state.chat_history.append({"role": "user", "content": user_prompt})
-        with chat_box:
-            with st.chat_message("user"):
-                st.markdown(user_prompt)
-
-            with st.chat_message("assistant"):
-                with st.spinner("Gria is analyzing LightGBM + TreeSHAP telemetry..."):
-                    gria_reply = client.chat_with_gria(
-                        message=user_prompt,
-                        county_name=selected_county,
-                        month=selected_month,
-                        document_context=st.session_state.uploaded_context,
-                        document_name=st.session_state.uploaded_name,
-                    )
-                    st.markdown(gria_reply.reply)
-        st.session_state.chat_history.append(
-            {"role": "assistant", "content": gria_reply.reply}
-        )
+else:
+    page_heading('03 / ASK GRIA', 'Make sense of the signals', 'Ask Gria about a county and a historical observation month.')
+    disclaimer()
+    st.caption('Questions are not stored by AgriShield, but may be sent to the AI provider when configured. Do not include sensitive personal information.')
+    counties, months = api(client.counties), api(client.historical_months)
+    if counties is not None and months is not None:
+        if not months:
+            st.warning('Historical data is not available on the backend, so Gria cannot assess a county yet.')
+        else:
+            a, b = st.columns(2)
+            county = a.selectbox('County', counties, index=None, placeholder='Choose a county')
+            month = b.selectbox('Historical month', sorted(months, reverse=True))
+            with st.expander('Add document context (optional)'):
+                st.caption('Text-based PDF, DOCX or UTF-8 TXT; maximum 5 MB. Text is extracted by the backend for your review. It does not become model input. Images and scanned PDFs cannot be used as NDVI.')
+                with st.form('document_form'):
+                    document = st.file_uploader('Choose a document', type=['pdf', 'docx', 'txt'])
+                    extract = st.form_submit_button('Extract text')
+                if extract:
+                    st.session_state.document = None
+                    if document is None:
+                        st.error('Choose a document first.')
+                    else:
+                        extracted = api(client.extract_document, document.name, document.getvalue(), document.type or 'application/octet-stream')
+                        if extracted:
+                            st.session_state.document = extracted
+                if st.session_state.get('document'):
+                    st.caption('Review the extracted text below. If selected, this text may be sent to the AI provider.')
+                    st.text_area('Extracted text', value=st.session_state.document['text'], height=180, disabled=True)
+                    if st.session_state.document['truncated']:
+                        st.warning('The text was shortened to 4,000 characters.')
+            use_document = st.checkbox('Share this reviewed document with Gria', disabled=not bool(st.session_state.get('document')))
+            with st.form('gria_form'):
+                question = st.text_area('Your question', placeholder='For example: What does this historical score mean?')
+                send = st.form_submit_button('Ask Gria', type='primary')
+            if send:
+                if not county or not question.strip():
+                    st.error('Choose a county and enter your question.')
+                else:
+                    with st.spinner('Asking the backend…'):
+                        response = api(client.chat, question.strip(), county, month, st.session_state.document['text'] if use_document else None, st.session_state.document['file_name'] if use_document else None)
+                    if response:
+                        st.markdown('#### Gria’s response')
+                        st.markdown(response['reply'])
+                        if response.get('mode') == 'ai':
+                            st.caption('AI-generated explanations may contain mistakes. Verify important decisions with a local expert.')
+                        else:
+                            st.caption('The AI service is unavailable; this is a factual backend summary, not an AI answer.')

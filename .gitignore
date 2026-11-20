@@ -19,7 +19,8 @@
 .env.staging
 apps/backend/.env
 apps/frontend/.env
-.streamlit
+.streamlit/*
+!apps/frontend/.streamlit/config.toml
 
 # NVIDIA and API keys (in case accidentally saved as separate files)
 *.key
@@ -228,3 +229,11 @@ venv/
 __pycache__/
 *.pyc
 .env
+
+# Reproducible research runs; promote artifacts only after review.
+ml-models/experiments/
+
+# Small reproducible evidence requested for this research run.
+!data_pipeline/outputs/panel_2026_11_20/cleaned_panel.csv
+!ml-models/research_runs/2026_11_20/*.csv
+!ml-models/research_runs/maize_2026_11_20/*.csv
