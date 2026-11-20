@@ -2,12 +2,21 @@
 
 This is not an independent test and measures the synthesized NDVI proxy only.
 """
-from pathlib import Path
 import json
+from pathlib import Path
+
 import joblib
 import pandas as pd
-from sklearn.metrics import (accuracy_score, average_precision_score, brier_score_loss,
-                             confusion_matrix, precision_score, recall_score, f1_score, roc_auc_score)
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_DIR = PROJECT_ROOT / 'apps/backend/ml_artifacts'

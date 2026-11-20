@@ -4,9 +4,9 @@ import zipfile
 from pathlib import Path
 
 import pdfplumber
+from core.auth import get_current_user
 from docx import Document
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from core.auth import get_current_user
 
 router = APIRouter(prefix='/documents', tags=['Document context'])
 MAX_BYTES = 5 * 1024 * 1024
@@ -53,7 +53,15 @@ async def extract_document(file: UploadFile = File(...), user: dict = Depends(ge
                 if not {'[Content_Types].xml', 'word/document.xml'}.issubset(set(archive.namelist())):
                     raise ValueError('Invalid DOCX file')
             doc = Document(io.BytesIO(raw))
-            text = '\n'.join(p.text for p in doc.paragraphs)
+            # Bound the join: a 20 MB DOCX can hold millions of characters, and the
+            # PDF branch already stops at MAX_TEXT. Collect only what is used.
+            paragraphs, length = [], 0
+            for paragraph in doc.paragraphs:
+                paragraphs.append(paragraph.text)
+                length += len(paragraph.text) + 1
+                if length > MAX_TEXT:
+                    break
+            text = '\n'.join(paragraphs)
     except (ValueError, UnicodeDecodeError, zipfile.BadZipFile, OSError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=f'Could not extract text: {exc}') from exc
     except Exception as exc:

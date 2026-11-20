@@ -1,9 +1,11 @@
 """Data and experimental workflow tests."""
 import importlib.util
 from pathlib import Path
+
 import pandas as pd
 import pytest
-from data_pipeline.scripts.experiment import FEATURES, build_experiment, load_panel, DEFAULT_PANEL
+
+from data_pipeline.scripts.experiment import DEFAULT_PANEL, FEATURES, build_experiment, load_panel
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,7 +24,6 @@ def test_panel_validation_and_split_baselines():
     pd.testing.assert_series_equal(old, new)
     with pytest.raises(ValueError, match='Duplicate'):
         bad = pd.concat([panel, panel.iloc[[0]]])
-        file = ROOT / 'data_pipeline/data/processed/ml_base_2015_2025.csv'
         # duplicate detection is performed while loading, tested separately below
         assert bad.duplicated(['county', 'year', 'month']).any()
         import tempfile
@@ -62,8 +63,9 @@ def test_cleaning_requires_explicit_imputation_and_preserves_flags():
 
 
 def test_panel_rejects_gaps_before_computing_lags(tmp_path):
-    from data_pipeline.scripts.experiment import DEFAULT_PANEL, load_panel
     import pandas as pd
+
+    from data_pipeline.scripts.experiment import DEFAULT_PANEL, load_panel
     panel = pd.read_csv(DEFAULT_PANEL)
     panel = panel.drop(index=panel.index[1])
     filename = tmp_path / 'gap.csv'
@@ -74,8 +76,9 @@ def test_panel_rejects_gaps_before_computing_lags(tmp_path):
 
 def test_download_external_verifies_and_never_overwrites(tmp_path, monkeypatch):
     import hashlib
-    from data_pipeline.scripts import download_external
     from io import BytesIO
+
+    from data_pipeline.scripts import download_external
     content = b'original research data\n'
     monkeypatch.setattr(download_external, 'OUT', tmp_path / 'external')
     monkeypatch.setattr(download_external, 'FILES', {'source.csv': ('https://example.invalid/data', hashlib.md5(content, usedforsecurity=False).hexdigest())})

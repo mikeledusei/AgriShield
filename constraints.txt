@@ -1,0 +1,29 @@
+# Resolved versions from a clean Python 3.11 install of apps/*/requirements.txt.
+# Reproducible builds: pip install -r apps/backend/requirements.txt -c constraints.txt
+# Refresh with: pip freeze | sort  (review the diff before committing).
+alembic==1.20.1
+fastapi==0.165.0
+httpx==0.28.1
+joblib==1.6.0
+langchain-core==1.8.4
+langchain-nvidia-ai-endpoints==1.5.0
+langgraph==1.2.24
+lightgbm==4.7.0
+numpy==2.4.6
+pandas==3.1.1
+pdfplumber==0.11.10
+plotly==7.1.0
+psycopg2-binary==2.9.13
+pydantic==2.14.4
+pydantic-settings==2.16.3
+python-docx==1.2.0
+python-multipart==0.0.34
+reportlab==5.1.0
+requests==2.34.2
+scikit-learn==1.9.0
+scipy==1.17.1
+shap==0.51.0
+sqlalchemy==2.1.9
+streamlit==1.67.0
+supabase==2.34.1
+uvicorn==0.54.0

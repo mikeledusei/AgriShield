@@ -1,9 +1,9 @@
 """Reusable database operations."""
-from typing import Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+
 from database import models
 from seed_counties import normalize_county_name
+from sqlalchemy import desc
+from sqlalchemy.orm import Session
 
 
 # ---------- Counties ----------
@@ -82,7 +82,7 @@ def save_report(db: Session, county_id: int, report_type: str, detailed: bool,
 
 # ---------- Chat ----------
 def save_chat_message(db: Session, county_name: str, user_message: str,
-                      gria_reply: str, risk_score: Optional[float] = None):
+                      gria_reply: str, risk_score: float | None = None):
     message = models.ChatMessage(
         county_name=county_name,
         user_message=user_message,

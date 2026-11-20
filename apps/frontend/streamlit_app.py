@@ -2,19 +2,23 @@
 import base64
 import csv
 import io
-import json
 from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
-
-from shared.api_client import APIError, get_client
+from shared.api_client import APIError, ConfigurationError, get_client
+from shared.county_map import county_map, legend_scores, map_caption
+from shared.map_data import county_centroids
+from shared.scales import BAND_COLORS, BAND_ORDER
 
 st.set_page_config(page_title="AgriShield | Agricultural intelligence", page_icon="🌿", layout="wide", initial_sidebar_state="expanded")
 ASSETS = Path(__file__).resolve().parent / "assets"
-client = get_client()
+try:
+    client = get_client()
+except ConfigurationError as exc:  # fail visibly, not on the first click
+    st.error(f"Dashboard configuration error: {exc}")
+    st.stop()
 
 
 def inject_style():
@@ -34,6 +38,10 @@ def inject_style():
     .eyebrow {{color:#a8d79d;font-weight:700;font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;}}
     .section-label {{color:#628168;font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:.72rem;margin-top:1.5rem;}}
     .intro {{color:#6a7d6d;line-height:1.6;margin-top:-.4rem;}}
+    .map-legend {{display:flex;flex-wrap:wrap;align-items:center;gap:4px 18px;margin:-6px 0 8px;font-size:.82rem;color:#33493a;}}
+    .map-legend span {{display:inline-flex;align-items:center;gap:6px;}}
+    .map-legend i {{width:11px;height:11px;border-radius:50%;border:1px solid rgba(32,54,42,.45);display:inline-block;}}
+    .map-legend .muted {{color:#6b7d6f;font-size:.76rem;}}
     .feature-card {{background:white;border:1px solid #e4ebe0;border-radius:14px;padding:20px;min-height:145px;box-shadow:0 3px 14px rgba(30,65,40,.025);}}
     .feature-card .icon {{font-size:1.25rem;background:#edf4e8;border-radius:10px;padding:8px;display:inline-block;margin-bottom:12px;}}
     .feature-card strong {{display:block;font-size:1rem;color:#203d2a;margin-bottom:5px;}}
@@ -47,6 +55,14 @@ def inject_style():
     div[data-testid="stExpander"] {{background:white;border:1px solid #e1eadd;border-radius:12px;}}
     @media(max-width:640px) {{.hero {{padding:27px;min-height:250px}} .hero h1 {{font-size:2.1rem}}}}
     </style>''', unsafe_allow_html=True)
+
+
+def _map_row(record, centroids):
+    """Attach the county centroid to a result row, or drop it if it cannot be placed."""
+    point = centroids.get(record.get('county'))
+    if point is None:
+        return None
+    return {**record, **point}
 
 
 def api(call, *args, **kwargs):
@@ -81,7 +97,7 @@ def show_shap(explanation, key):
                  color_discrete_map={'Raises model output': '#b46041', 'Lowers model output': '#438059'},
                  labels={'Contribution': 'SHAP contribution (model log-odds)', 'Input': ''})
     fig.update_layout(height=max(300, len(rows) * 35 + 95), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend_title_text='')
-    st.plotly_chart(fig, use_container_width=True, key=key)
+    st.plotly_chart(fig, width='stretch', key=key)
 
 
 def show_analysis(analysis):
@@ -108,7 +124,12 @@ def show_result(result):
     c.metric('Observation period', result['period'])
     st.caption(f"{result['county_name']} County · Model: {result['model_used']} · Calculated by the backend from the inputs below")
     disclaimer()
-    if result.get('training_range_warnings'):
+    if result.get('extrapolated'):
+        st.error(
+            'Extrapolation: ' + ', '.join(item['label'] for item in result['training_range_warnings'])
+            + ' lie outside the model training range. This score is an extrapolation and should not be used for decisions.'
+        )
+    elif result.get('training_range_warnings'):
         st.warning('Some inputs are outside the range seen in training: ' + ', '.join(item['label'] for item in result['training_range_warnings']) + '. The model may be less reliable for these values.')
     elif result.get('training_range_check') != 'checked':
         st.info('Training-range checks are unavailable for this model.')
@@ -116,7 +137,7 @@ def show_result(result):
         st.caption('Inputs are within the individual ranges observed in training; this does not guarantee their combination is familiar or that the score is accurate.')
     if result.get('measurements'):
         with st.expander('See the original measurements'):
-            st.dataframe(pd.DataFrame([{'Measurement': k, 'Value': v} for k, v in result['measurements'].items()]), hide_index=True, use_container_width=True)
+            st.dataframe(pd.DataFrame([{'Measurement': k, 'Value': v} for k, v in result['measurements'].items()]), hide_index=True, width='stretch')
     with st.expander('What influenced this score? (SHAP)', expanded=True):
         show_shap(result.get('explanation'), 'assessment_shap')
     st.caption('If you ask Gria to analyze this assessment or include its analysis in a report, the model inputs and score may be sent to the configured AI provider. Do not include sensitive information.')
@@ -131,7 +152,7 @@ def show_result(result):
     if stored_analysis and stored_analysis['key'] == (result['county_name'], result['period'], result['model_probability']):
         show_analysis(stored_analysis['analysis'])
     with st.expander('See the exact model inputs'):
-        st.dataframe(pd.DataFrame([{'Input': k, 'Value': v} for k, v in result['features'].items()]), hide_index=True, use_container_width=True)
+        st.dataframe(pd.DataFrame([{'Input': k, 'Value': v} for k, v in result['features'].items()]), hide_index=True, width='stretch')
     if st.button('Save assessment to history', key='save_assessment_history'):
         history_key = st.session_state.get('history_key')
         if not history_key:
@@ -215,7 +236,7 @@ if page == 'Overview':
     st.subheader('A clearer view of the land')
     st.markdown('<p class="intro">Explore the tools designed to help you understand the signals behind changing conditions.</p>', unsafe_allow_html=True)
     cards = st.columns(3)
-    for col, icon, title, desc in zip(cards, ['🌾', '🗺️', '✦'], ['Assess your observations', 'Explore historical patterns', 'Ask Gria'], ['Enter your own measurements and receive a model score.', 'Compare the project’s historical county data for a selected month.', 'Ask questions about a selected historical county assessment.']):
+    for col, icon, title, desc in zip(cards, ['🌾', '🗺️', '✦'], ['Assess your observations', 'Explore historical patterns', 'Ask Gria'], ['Enter your own measurements and receive a model score.', 'Compare the project’s historical county data for a selected month.', 'Ask questions about a selected historical county assessment.'], strict=False):
         with col:
             st.markdown(f'<div class="feature-card"><div class="icon">{icon}</div><strong>{title}</strong><span>{desc}</span></div>', unsafe_allow_html=True)
     st.write('')
@@ -239,18 +260,25 @@ elif page == 'Live conditions':
         options = {'Temperature (°C)': 'temperature_c', 'Relative humidity (%)': 'humidity_percent', 'Precipitation (mm per model interval)': 'precipitation_mm', 'Wind speed (km/h)': 'wind_kmh'}
         selected = st.selectbox('Weather indicator', list(options))
         column = options[selected]
-        geo = json.loads((ASSETS / 'kenya_counties.geojson').read_text())
-        fig = go.Figure(go.Choropleth(geojson=geo, locations=[x['properties']['county'] for x in geo['features']], z=[0] * len(geo['features']),
-                                      featureidkey='properties.county', colorscale=[[0, '#edf4e9'], [1, '#edf4e9']], showscale=False,
-                                      marker_line_color='#a9bca9', marker_line_width=.5, hoverinfo='skip'))
-        fig.add_trace(go.Scattergeo(lat=df['latitude'], lon=df['longitude'], text=df['county'], mode='markers',
-                                    customdata=df[['temperature_c', 'humidity_percent', 'precipitation_mm', 'wind_kmh', 'time_utc']],
-                                    marker=dict(size=10, color=df[column], colorscale='YlGnBu', colorbar=dict(title=selected), line=dict(color='#173e2c', width=.5)),
-                                    hovertemplate='<b>%{text}</b><br>Temperature: %{customdata[0]} °C<br>Humidity: %{customdata[1]}%<br>Precipitation: %{customdata[2]} mm per interval<br>Wind: %{customdata[3]} km/h<br>Model time: %{customdata[4]}<extra></extra>'))
-        fig.update_geos(fitbounds='locations', visible=False)
-        fig.update_layout(height=540, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(df.rename(columns={'county': 'County', 'temperature_c': 'Temperature °C', 'humidity_percent': 'Humidity %', 'precipitation_mm': 'Precipitation mm / interval', 'wind_kmh': 'Wind km/h', 'time_utc': 'Model time UTC', 'interval_seconds': 'Interval seconds'}), hide_index=True, use_container_width=True)
+        fig = county_map(
+            df.to_dict('records'),
+            band_key=None,
+            value_key=column,
+            value_label=selected,
+            hover_lines=lambda row: (
+                f"{row['temperature_c']} °C · {row['humidity_percent']}% humidity<br>"
+                f"{row['precipitation_mm']} mm per interval · {row['wind_kmh']} km/h<br>"
+                f"Model time {row['time_utc']}"
+            ),
+            height=580,
+        )
+        if fig is None:
+            st.warning('The county map asset could not be loaded, so the map is unavailable.')
+            st.dataframe(df, hide_index=True, width='stretch')
+            return
+        st.plotly_chart(fig, width='stretch')
+        st.caption(map_caption(fig))
+        st.dataframe(df.rename(columns={'county': 'County', 'temperature_c': 'Temperature °C', 'humidity_percent': 'Humidity %', 'precipitation_mm': 'Precipitation mm / interval', 'wind_kmh': 'Wind km/h', 'time_utc': 'Model time UTC', 'interval_seconds': 'Interval seconds'}), hide_index=True, width='stretch')
         st.caption('Coordinates are representative points from the project, not field stations. Precipitation is the amount over the provider’s stated model interval.')
     live_map()
 
@@ -267,40 +295,25 @@ elif page == 'Reported maize yields':
             st.metric('Counties with usable records', f'{len(valid)} / 47')
             if len(valid) < 47:
                 st.info('Some reported values are inconsistent or lack harvested area and are not shown as yields. See the table for flags.')
-            geo = json.loads((ASSETS / 'kenya_counties.geojson').read_text())
-            for feature in geo['features']:
-                feature['properties']['county'] = feature['properties']['county'].replace('-', ' ')
-            # Create dot indicators for each county with county names and colors matching the Score scale logic (but applied to yield tonnes/ha)
-            # Note: Score scale (0-100) is for risk scores, while yields are tonnes/ha. We use YlGn scale for yields to be realistic and honest.
-            # To match the "dot indicators" request, we use Scattergeo instead of choropleth.
-            # Colors are mapped to yield_tonnes_per_ha using YlGn scale (realistic for yields).
-            # We use a custom scale that visually resembles the Score scale's progression but maps to tonnes/ha to avoid fabrication.
-            # Score scale colors: ['#d9eacb', '#a3c37d', '#e3c078', '#b15f3f'] (Lower, Moderate, Elevated, High risk)
-            # Yield scale (YlGn): ['#ffffcc', '#a1d99b', '#31a354'] (Low, Medium, High yield)
-            # We will use YlGn for realism (yields) but use dot indicators as requested.
-            fig = go.Figure(data=go.Scattergeo(
-                lon=[feature['properties'].get('longitude', 0) for feature in geo['features'] if feature['properties']['county'] in valid['county'].values],
-                lat=[feature['properties'].get('latitude', 0) for feature in geo['features'] if feature['properties']['county'] in valid['county'].values],
-                text=[row['county'] for _, row in valid.iterrows()],
-                mode='markers',
-                marker=dict(
-                    size=12,
-                    color=valid['yield_tonnes_per_ha'],
-                    colorscale='YlGn',
-                    colorbar=dict(title='Reported yield (tonnes/ha)'),
-                    showscale=True,
-                    line=dict(width=1, color='DarkSlateGrey')
-                ),
-                hoverinfo='text+marker',
-                hovertext=[f"County: {row['county']}<br>Yield: {row['yield_tonnes_per_ha']:.2f} t/ha<br>Area: {row['harvested_area_ha']:.0f} ha" for _, row in valid.iterrows()],
-                name='Reported Maize Yields'
-            ))
-            # Align the geojson counties with the scattergeo points by ensuring the map projection fits the points
-            fig.update_geos(fitbounds='locations', visible=False)
-            fig.update_layout(height=500, margin=dict(l=0, r=0, t=5, b=0), paper_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig, use_container_width=True)
-            st.caption('Dot indicators represent reported county yields (tonnes/ha), not crop failure or risk scores. Colours match the yield scale (YlGn). Yields depend on crop type, planting, area, weather and other factors.')
-            st.dataframe(frame.rename(columns={'county': 'County', 'yield_tonnes_per_ha': 'Yield (tonnes/ha)', 'harvested_area_ha': 'Harvested area (ha)', 'production_tonnes': 'Production (tonnes)', 'quality_flag': 'Quality flag'}), hide_index=True, use_container_width=True)
+            centroids = county_centroids()
+            plotted = [_map_row(record, centroids) for record in valid.to_dict('records')]
+            plotted = [row for row in plotted if row is not None]
+            fig = county_map(
+                plotted,
+                band_key=None,
+                value_key='yield_tonnes_per_ha',
+                value_label='Reported yield (t/ha)',
+                hover_lines=lambda row: f"Reported yield: {row['yield_tonnes_per_ha']:.2f} t/ha",
+                height=560,
+            ) if plotted else None
+            if fig is None:
+                st.warning('No reported yields can be placed on the map.')
+                st.dataframe(frame, hide_index=True, width='stretch')
+            else:
+                st.plotly_chart(fig, width='stretch')
+                st.caption(map_caption(fig) + ' Dot colour is the reported yield, not a risk band.')
+                st.caption('Dot indicators represent reported county yields (tonnes/ha), not crop failure or risk scores. Yields depend on crop type, planting, area, weather and other factors.')
+            st.dataframe(frame.rename(columns={'county': 'County', 'yield_tonnes_per_ha': 'Yield (tonnes/ha)', 'harvested_area_ha': 'Harvested area (ha)', 'production_tonnes': 'Production (tonnes)', 'quality_flag': 'Quality flag'}), hide_index=True, width='stretch')
             st.markdown(f"Sources: [KNBS catalogue]({data['source_page']}) · [workbook mirror]({data['mirror']}). 2019 is not present in this workbook.")
 
 elif page == 'New assessment':
@@ -322,10 +335,15 @@ elif page == 'New assessment':
                     fields = [f for f in schema['features'] if f['group'] == group]
                     for i in range(0, len(fields), 2):
                         cols = st.columns(2)
-                        for col, field in zip(cols, fields[i:i+2]):
+                        for col, field in zip(cols, fields[i:i+2], strict=False):
                             values[field['key']] = col.number_input(f"{field['label']} ({field['unit']})", min_value=float(field['minimum']), max_value=float(field['maximum']), value=None, step=0.01, format='%.6f', help=field['help'], key='feature_' + field['key'])
                 st.caption('The model also uses two seasonal values. The backend calculates these from your selected month; you do not need to enter them.')
-                submitted = st.form_submit_button('Generate assessment  →', type='primary', use_container_width=True)
+                accept_extrapolation = st.checkbox(
+                    'Score even if a value is outside the model training range',
+                    value=False,
+                    help='The result will be labelled as an extrapolation and should not be used for decisions.',
+                )
+                submitted = st.form_submit_button('Generate assessment  →', type='primary', width='stretch')
             if submitted:
                 st.session_state.assessment = None
                 st.session_state.report_key = None
@@ -333,7 +351,8 @@ elif page == 'New assessment':
                 if not county or not date or missing:
                     st.error('Please choose a county and month and complete every measurement.' + (' Missing: ' + ', '.join(missing) if missing else ''))
                 else:
-                    payload = {'county_name': county, 'period': date.strftime('%Y-%m'), **values}
+                    payload = {'county_name': county, 'period': date.strftime('%Y-%m'), **values,
+                               'accept_extrapolation': accept_extrapolation}
                     with st.spinner('Evaluating your observations…'):
                         result = api(client.predict, payload)
                     if result:
@@ -403,27 +422,29 @@ elif page == 'New assessment':
                 for group, fields in raw_groups.items():
                     st.markdown(f'#### {group}')
                     for i in range(0, len(fields), 2):
-                        for col, (key, label, minimum, maximum) in zip(st.columns(2), fields[i:i+2]):
+                        for col, (key, label, minimum, maximum) in zip(st.columns(2), fields[i:i+2], strict=False):
                             if isinstance(minimum, int):
                                 raw_values[key] = col.number_input(label, min_value=minimum, max_value=maximum, value=None, step=1, key='raw_' + key)
                             else:
                                 raw_values[key] = col.number_input(label, min_value=minimum, max_value=maximum, value=None, step=0.01, format='%.6f', key='raw_' + key)
-                raw_submitted = st.form_submit_button('Calculate and assess  →', type='primary', use_container_width=True)
+                raw_submitted = st.form_submit_button('Calculate and assess  →', type='primary', width='stretch')
             if raw_submitted:
                 st.session_state.assessment = None
                 st.session_state.report_key = None
                 if not raw_county or not raw_date or any(v is None for v in raw_values.values()):
                     st.error('Please choose a county and month and complete every measurement.')
                 else:
-                    payload = {'county_name': raw_county, 'period': raw_date.strftime('%Y-%m'), **raw_values}
+                    payload = {'county_name': raw_county, 'period': raw_date.strftime('%Y-%m'), **raw_values,
+                               'accept_extrapolation': False}
                     with st.spinner('Calculating indicators and evaluating your observations…'):
                         result = api(client.predict_measurements, payload)
                     if result:
                         remember_assessment(result)
         with csv_tab:
             st.write('Upload a UTF-8 CSV containing **one complete observation**. Column names and units must match the template. No missing values are filled in automatically.')
+            st.caption('Values outside the model training range are rejected with the offending column. If you genuinely have such an observation, add an `accept_extrapolation` column set to `true`; the result is then labelled as an extrapolation.')
             buffer = io.StringIO()
-            csv.writer(buffer).writerow(schema['csv_columns'])
+            csv.writer(buffer).writerow(schema['csv_columns'] + ['accept_extrapolation'])
             st.download_button('Download empty CSV template', buffer.getvalue(), 'agrishield-template.csv', 'text/csv')
             with st.form('csv_form'):
                 upload = st.file_uploader('Choose a CSV file', type=['csv'])
@@ -463,40 +484,27 @@ elif page == 'Historical explorer':
                 st.info(f"Historical data only · Latest packaged month: {max(months)}. This map is not connected to a live feed.")
                 if len(df) < 47:
                     st.warning(f"Only {len(df)} of 47 counties have complete observations for this month; missing counties are not scored.")
-                geo = json.loads((ASSETS / 'kenya_counties.geojson').read_text())
-                for feature in geo['features']:
-                    feature['properties']['county'] = feature['properties']['county'].replace('-', ' ')
-                fig = go.Figure(data=go.Scattergeo(
-                    lon=[feature['properties'].get('longitude', 0) for feature in geo['features'] if feature['properties']['county'] in df['county'].values],
-                    lat=[feature['properties'].get('latitude', 0) for feature in geo['features'] if feature['properties']['county'] in df['county'].values],
-                    text=[row['county'] for _, row in df.iterrows()],
-                    mode='markers',
-                    marker=dict(
-                        size=12,
-                        color=df['score'],
-                        colorscale=['#d9eacb', '#a3c37d', '#e3c078', '#b15f3f'],
-                        cmin=0, cmax=100,
-                        colorbar=dict(title='Score'),
-                        showscale=True,
-                        line=dict(width=1, color='DarkSlateGrey')
-                    ),
-                    hoverinfo='text+marker',
-                    hovertext=[f"County: {row['county']}<br>Score: {row['score']:.1f}/100<br>Band: {row['band']}" for _, row in df.iterrows()],
-                    name='County Risk Scores'
-                ))
-                fig.update_geos(fitbounds='locations', visible=False)
-                fig.update_layout(height=500, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig, use_container_width=True)
-                counts = df['band'].value_counts().reindex(['Lower', 'Moderate', 'Elevated', 'High'], fill_value=0).reset_index()
+                centroids = county_centroids()
+                plotted = [_map_row(record, centroids) for record in df.to_dict('records')]
+                plotted = [row for row in plotted if row is not None]
+                name_all = st.toggle('Label every county', value=True, help='Off shows fewer names on the map; every name stays available on hover.')
+                fig = county_map(plotted, band_key='band', height=600, label_all=name_all) if plotted else None
+                if fig is not None:
+                    st.plotly_chart(fig, width='stretch')
+                    legend_scores()
+                    st.caption(map_caption(fig) + ' Dot colour is the score band; the dot marks the county centre, not a station.')
+                else:
+                    st.warning('No scored counties could be placed on the map.')
+                counts = df['band'].value_counts().reindex(list(BAND_ORDER), fill_value=0).reset_index()
                 counts.columns = ['Score band', 'Counties']
                 st.markdown('#### Counties by score band')
-                bands = px.bar(counts, x='Score band', y='Counties', color='Score band', color_discrete_map={'Lower': '#8cb77d', 'Moderate': '#d7bc70', 'Elevated': '#ce8a54', 'High': '#ac5841'})
+                bands = px.bar(counts, x='Score band', y='Counties', color='Score band', color_discrete_map=BAND_COLORS)
                 bands.update_layout(height=260, showlegend=False, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(bands, use_container_width=True)
+                st.plotly_chart(bands, width='stretch')
                 st.caption('Bands are descriptive groupings of model scores, not official risk or warning categories.')
                 region = st.selectbox('Filter table by region', ['All regions'] + sorted(df['region'].dropna().unique().tolist()))
                 display = df if region == 'All regions' else df[df['region'] == region]
-                st.dataframe(display.sort_values('score', ascending=False).rename(columns={'county': 'County', 'region': 'Region', 'score': 'Score / 100', 'band': 'Score band'}), hide_index=True, use_container_width=True)
+                st.dataframe(display.sort_values('score', ascending=False).rename(columns={'county': 'County', 'region': 'Region', 'score': 'Score / 100', 'band': 'Score band'}), hide_index=True, width='stretch')
                 st.caption(f"Historical data · {month} · Model: {data['model_used']}. Scores reflect a research proxy, not verified losses.")
                 st.markdown('#### Compare counties')
                 chosen = st.multiselect('Choose counties to compare', sorted(df['county'].tolist()), max_selections=10, placeholder='Select up to ten counties')
@@ -504,7 +512,7 @@ elif page == 'Historical explorer':
                     subset = df[df['county'].isin(chosen)].sort_values('score')
                     comparison = px.bar(subset, x='score', y='county', orientation='h', color='score', color_continuous_scale=['#aacb91', '#d8b77a', '#ac6547'], range_color=(0, 100), labels={'score': 'Model score / 100', 'county': 'County'})
                     comparison.update_layout(height=max(230, len(chosen) * 38 + 100), margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
-                    st.plotly_chart(comparison, use_container_width=True)
+                    st.plotly_chart(comparison, width='stretch')
                 st.markdown('#### County history')
                 trend_county = st.selectbox('County for the historical trend and explanation', sorted(df['county'].tolist()))
                 if trend_county:
@@ -514,7 +522,7 @@ elif page == 'Historical explorer':
                         line = px.line(series, x='period', y='score', markers=True, labels={'period': 'Observation month', 'score': 'Model score / 100'})
                         line.update_traces(line_color='#39744a')
                         line.update_layout(height=280, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', yaxis_range=[0, 100])
-                        st.plotly_chart(line, use_container_width=True)
+                        st.plotly_chart(line, width='stretch')
                         st.caption('Up to 12 historical observations ending in the selected month. Scores are recomputed by the backend from the stored feature rows.')
                         rain_tab, vegetation_tab, moisture_tab = st.tabs(['Rainfall', 'Vegetation', 'Soil moisture'])
                         for tab, col, title, color in [(rain_tab, 'rainfall_mm', 'Rainfall (mm)', '#39744a'), (vegetation_tab, 'ndvi_lag1', 'Previous-month NDVI', '#78a159'), (moisture_tab, 'soil_moisture', 'Soil moisture (m³/m³)', '#4a8a9b')]:
@@ -522,7 +530,7 @@ elif page == 'Historical explorer':
                                 chart = px.line(series, x='period', y=col, markers=True, labels={'period': 'Observation month', col: title})
                                 chart.update_traces(line_color=color)
                                 chart.update_layout(height=250, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                                st.plotly_chart(chart, use_container_width=True, key='history_' + col)
+                                st.plotly_chart(chart, width='stretch', key='history_' + col)
                         if trend_county:
                             detail = api(client.historical_detail, trend_county, month)
                             if detail:
@@ -555,7 +563,7 @@ elif page == 'Historical explorer':
                                 if st.session_state.get('historical_pdf_key') == (trend_county, month):
                                     st.download_button('Download county PDF', st.session_state.historical_pdf, file_name='agrishield-county-report.pdf', mime='application/pdf')
                         with st.expander('See historical weather and vegetation inputs'):
-                            st.dataframe(series.rename(columns={'period': 'Month', 'score': 'Score / 100', 'rainfall_mm': 'Rainfall (mm)', 'ndvi_lag1': 'Previous month NDVI', 'soil_moisture': 'Soil moisture (m³/m³)'}), hide_index=True, use_container_width=True)
+                            st.dataframe(series.rename(columns={'period': 'Month', 'score': 'Score / 100', 'rainfall_mm': 'Rainfall (mm)', 'ndvi_lag1': 'Previous month NDVI', 'soil_moisture': 'Soil moisture (m³/m³)'}), hide_index=True, width='stretch')
 
 elif page == 'History':
     page_heading('SAVED ASSESSMENTS', 'Your private history', 'Return to assessments you chose to save and download their original results.')
@@ -598,7 +606,7 @@ elif page == 'History':
                     st.caption(f"{saved['county_name']} · {saved['period']} · {saved.get('data_source', '')}")
                     show_shap(saved.get('explanation'), 'saved_history_shap')
                     with st.expander('Saved model inputs and details'):
-                        st.dataframe(pd.DataFrame([{'Input': k, 'Value': v} for k, v in saved['features'].items()]), hide_index=True, use_container_width=True)
+                        st.dataframe(pd.DataFrame([{'Input': k, 'Value': v} for k, v in saved['features'].items()]), hide_index=True, width='stretch')
                         st.caption(f"Model {saved['model_used']} · SHA-256 {saved.get('model_sha256', 'unavailable')}")
                     if st.button('Prepare saved PDF'):
                         pdf = api(client.history_pdf, st.session_state.history_key, selected_record)

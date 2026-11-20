@@ -1,0 +1,30 @@
+# Keep the build context small: this repo has ~23 MB of git history, 23 MB of data
+# and 14 MB of documents, none of which the API image needs.
+.git
+.gitignore
+.github
+.devcontainer
+**/__pycache__
+**/*.py[cod]
+.venv
+venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+docs
+tests
+ml-models
+data_pipeline/notebooks
+data_pipeline/legacy_reference
+data_pipeline/outputs
+data_pipeline/data/raw
+data_pipeline/data/geospatial
+data_pipeline/data/external/knbs_candidate/*.xlsx
+data_pipeline/data/processed/*
+!data_pipeline/data/processed/train_matrix.csv
+!data_pipeline/data/processed/test_matrix.csv
+*.md
+!README.md
+**/.env
+**/agrishield.db
+**/test.db

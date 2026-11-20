@@ -5,6 +5,7 @@ Original workbook is retained. Invalid or inconsistent rows are flagged, never r
 import argparse
 import hashlib
 from pathlib import Path
+
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]

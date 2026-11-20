@@ -1,25 +1,30 @@
 """
-AgriShield Prediction, Future Forecasting & TreeSHAP Explainability Engine (2015–2025 Pipeline).
-Primary scorer: LightGBM Champion (ml_artifacts/lightgbm_agrishield_v1.joblib).
-Explainability: Exact TreeSHAP feature contributions (pred_contrib=True) + Global Importance.
-Fallback scorer: transparent rule-based engine (always available).
+AgriShield Prediction & TreeSHAP Explainability Engine (2015-2025 pipeline).
+
+Scorer: LightGBM champion (ml_artifacts/lightgbm_agrishield_v1.joblib), loaded only
+after its SHA-256 matches the hash recorded with the training ranges.
+Explainability: exact TreeSHAP contributions (pred_contrib=True).
+
+There is no fallback scorer. If the artifact is missing, unreadable or fails its
+hash check, every scoring path raises and the API reports the model as
+unavailable; it never substitutes a rule-based or historical number for a score.
 """
-import json
 import hashlib
+import json
 import logging
 import math
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import joblib
 import numpy as np
 import pandas as pd
-from sqlalchemy.orm import Session
-
 from core.config import settings
+from core.scales import score_and_band
 from database import models
 from seed_counties import COUNTY_METADATA, ensure_counties_seeded, normalize_county_name
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger("agrishield")
 
@@ -31,7 +36,7 @@ PROCESSED_DATA_DIR = PROJECT_ROOT / "data_pipeline" / "data" / "processed"
 # Default benchmark month showing realistic dry-season risk differentiation across Kenya's 47 counties
 DEFAULT_ACTIVE_MONTH = "2025-02"
 
-FEATURE_LABELS: Dict[str, str] = {
+FEATURE_LABELS: dict[str, str] = {
     "forage_dryness_index": "Forage Dryness Index (Pasture Stress)",
     "rainfall_mm": "Monthly Rainfall (mm)",
     "ndvi_anomaly": "NDVI Vegetation Anomaly (vs. Normal)",
@@ -50,32 +55,14 @@ FEATURE_LABELS: Dict[str, str] = {
     "farming_ratio": "County Farming Household Ratio",
 }
 
-FEATURE_RANGES: Dict[str, Dict[str, float]] = {
-    "rainfall_mm": {"min": 0.0, "max": 450.0, "step": 5.0, "default": 65.0},
-    "rain_3m_sum": {"min": 0.0, "max": 1000.0, "step": 10.0, "default": 220.0},
-    "rainfall_anomaly": {"min": -200.0, "max": 200.0, "step": 5.0, "default": -10.0},
-    "temp_mean_c": {"min": 10.0, "max": 38.5, "step": 0.5, "default": 24.0},
-    "soil_moisture": {"min": 0.03, "max": 0.47, "step": 0.01, "default": 0.25},
-    "ndvi_lag1": {"min": 0.15, "max": 0.82, "step": 0.01, "default": 0.55},
-    "ndvi_lag3": {"min": 0.15, "max": 0.82, "step": 0.01, "default": 0.56},
-    "ndvi_roll3_mean": {"min": 0.15, "max": 0.82, "step": 0.01, "default": 0.55},
-    "ndvi_roll3_std": {"min": 0.00, "max": 0.20, "step": 0.005, "default": 0.04},
-    "ndvi_anomaly": {"min": -0.25, "max": 0.25, "step": 0.01, "default": 0.00},
-    "forage_dryness_index": {"min": 0.00, "max": 1.80, "step": 0.02, "default": 0.20},
-    "farming_ratio": {"min": 0.02, "max": 0.85, "step": 0.01, "default": 0.65},
-    "livestock_share": {"min": 0.35, "max": 0.88, "step": 0.01, "default": 0.45},
-    "irrigation_ratio": {"min": 0.01, "max": 0.30, "step": 0.005, "default": 0.05},
-    "month_sin": {"min": -1.0, "max": 1.0, "step": 0.05, "default": 0.5},
-    "month_cos": {"min": -1.0, "max": 1.0, "step": 0.05, "default": 0.866},
-}
-
-
 class CountyNotFoundError(Exception):
     pass
 
 
-# ---------------------------------------------------------------- risk scale
+# ------------------------------------------------------------ risk levels
+
 def get_risk_level(score: float) -> str:
+    """Legacy label mapping kept for stored snapshots and the research scripts."""
     if score < 25:
         return "SAFE"
     if score < 50:
@@ -86,44 +73,21 @@ def get_risk_level(score: float) -> str:
 
 
 RECOMMENDATIONS = {
-    "SAFE": "Conditions are favorable. Continue routine monitoring, soil conservation, and normal planting or grazing operations.",
-    "MODERATE": "Early moisture and pasture stress detected. Increase field monitoring, conserve water, and prepare supplemental livestock fodder.",
-    "HIGH": "Significant drought stress detected. Activate county drought response, prioritize smallholder irrigation and drought-tolerant seeds, and pre-position livestock feed.",
-    "CRITICAL": "Severe agricultural & forage shock. Escalate to national emergency management; deploy emergency water trucking, livestock feed relief, and targeted cash transfers immediately.",
+    "Lower": "Conditions are favourable. Continue routine monitoring, soil conservation, and normal planting or grazing operations.",
+    "Moderate": "Early moisture and pasture stress detected. Increase field monitoring, conserve water, and prepare supplemental livestock fodder.",
+    "Elevated": "Significant drought stress detected. Activate county drought response, prioritise smallholder irrigation and drought-tolerant seeds, and pre-position livestock feed.",
+    "High": "Severe agricultural and forage shock. Escalate to national emergency management; deploy emergency water trucking, livestock feed relief, and targeted cash transfers.",
 }
 
 
-def _focus_advice(focus: Optional[str], level: str) -> str:
-    if level not in ("HIGH", "CRITICAL"):
+def _focus_advice(focus: str | None, level: str) -> str:
+    if level not in ("HIGH", "CRITICAL", "Elevated", "High"):
         return ""
     if (focus or "").lower() == "livestock":
-        return " Prioritize emergency fodder banks, borehole maintenance, and veterinary outreach for pastoral herds."
+        return " Prioritise emergency fodder banks, borehole maintenance, and veterinary outreach for pastoral herds."
     if (focus or "").lower() in ("crop", "crops"):
         return " Fast-track early-maturing drought-tolerant seeds, mulching, and micro-irrigation support."
     return ""
-
-
-# ------------------------------------------------------------- rule engine
-def _rule_components(f: Dict[str, float]) -> Dict[str, float]:
-    rain = float(f.get("rainfall_anomaly_30d", 0.0))
-    ndvi = float(f.get("ndvi_pasture_index", 0.5))
-    temp = float(f.get("temp_max_avg", 28.0))
-    soil = float(f.get("soil_moisture_deficit", 40.0))
-    return {
-        "Rainfall deficit": 40 if rain <= -30 else 25 if rain <= -10 else 10 if rain < 0 else 0,
-        "Vegetation stress (NDVI)": 30 if ndvi <= 0.25 else 20 if ndvi <= 0.4 else 8 if ndvi <= 0.55 else 0,
-        "Heat stress": 15 if temp >= 34 else 8 if temp >= 31 else 0,
-        "Soil moisture deficit": 15 if soil >= 70 else 8 if soil >= 55 else 0,
-    }
-
-
-def compute_score(f: Dict[str, float]) -> int:
-    return int(min(100, max(0, sum(_rule_components(f).values()))))
-
-
-def _main_driver(comps: Dict[str, float]) -> str:
-    top = max(comps, key=comps.get)
-    return top if comps[top] > 0 else "No dominant risk factor detected"
 
 
 # ------------------------------------------------------------------ engine
@@ -135,12 +99,22 @@ class PredictionEngine:
         self.model_sha256 = None
         self.model_name: str = "rule_based"
         self.scaler = None
-        self.feature_cols: List[str] = []
-        self.ndvi_stats: Dict[str, Dict[str, float]] = {}
-        self.county_history: Dict[str, pd.DataFrame] = {}
-        self.available_months: List[str] = []
-        self.rain_clim: Dict[Tuple[str, int], float] = {}
+        self.feature_cols: list[str] = []
+        self.ndvi_stats: dict[str, dict[str, float]] = {}
+        self.county_history: dict[str, pd.DataFrame] = {}
+        self.available_months: list[str] = []
+        self.rain_clim: dict[tuple[str, int], float] = {}
+        self.feature_ranges: dict[str, dict[str, float]] = {}
         self._load_artifacts()
+
+    @staticmethod
+    def _expected_model_sha256() -> str | None:
+        """Artifact hash recorded alongside the training ranges, if present."""
+        ranges_path = ARTIFACT_DIR / 'training_feature_ranges.json'
+        try:
+            return json.loads(ranges_path.read_text(encoding='utf-8')).get('model_sha256')
+        except (OSError, ValueError, TypeError):
+            return None
 
     # ------------------------------------------------------------ loading
     def _load_artifacts(self) -> None:
@@ -162,15 +136,43 @@ class PredictionEngine:
         model_path = settings.MODEL_PATH
         if model_path.exists() and self.feature_cols:
             try:
-                self.model = joblib.load(model_path)
-                self.model_sha256 = hashlib.sha256(model_path.read_bytes()).hexdigest()
-                cls_name = type(self.model).__name__.lower()
-                self.model_name = 'lightgbm_v1' if 'lgbm' in cls_name or 'lightgbm' in cls_name else type(self.model).__name__
-                logger.info('Model loaded from %s (%s).', model_path.name, self.model_name)
+                digest = hashlib.sha256(model_path.read_bytes()).hexdigest()
+                expected = self._expected_model_sha256()
+                if settings.REQUIRE_MODEL_HASH and expected and digest != expected:
+                    # joblib.load runs arbitrary code, so the digest is verified first.
+                    logger.error(
+                        'Refusing to load %s: SHA-256 %s does not match the recorded artifact hash %s.',
+                        model_path.name, digest[:12], expected[:12],
+                    )
+                elif settings.REQUIRE_MODEL_HASH and not expected:
+                    logger.error(
+                        'Refusing to load %s: no artifact hash is recorded in training_feature_ranges.json.',
+                        model_path.name,
+                    )
+                else:
+                    self.model = joblib.load(model_path)
+                    self.model_sha256 = digest
+                    cls_name = type(self.model).__name__.lower()
+                    self.model_name = 'lightgbm_v1' if 'lgbm' in cls_name or 'lightgbm' in cls_name else type(self.model).__name__
+                    logger.info('Model loaded from %s (%s).', model_path.name, self.model_name)
             except Exception as exc:
-                logger.warning('Could not load configured model %s: %s', model_path.name, exc)
+                logger.error('Could not load configured model %s: %s', model_path.name, exc)
                 self.model = None
                 self.model_sha256 = None
+        elif not model_path.exists():
+            logger.error('Model artifact %s is missing; scoring endpoints will report it as unavailable.', model_path)
+
+        # Recorded training ranges, used by the request contract and the UI sliders.
+        ranges_path = ARTIFACT_DIR / 'training_feature_ranges.json'
+        if ranges_path.exists():
+            try:
+                payload = json.loads(ranges_path.read_text(encoding='utf-8'))
+                self.feature_ranges = {
+                    key: {'min': float(bounds['min']), 'max': float(bounds['max'])}
+                    for key, bounds in payload.get('ranges', {}).items()
+                }
+            except Exception as exc:
+                logger.warning('Could not read %s: %s', ranges_path.name, exc)
 
         for stats_path in (
             ARTIFACT_DIR / "county_ndvi_stats.csv",
@@ -197,7 +199,7 @@ class PredictionEngine:
                 except Exception as exc:
                     logger.warning(f"Failed to read {stats_path}: {exc}")
 
-        frames: List[pd.DataFrame] = []
+        frames: list[pd.DataFrame] = []
         for matrix_name in ("train_matrix.csv", "test_matrix.csv"):
             m_path = PROCESSED_DATA_DIR / matrix_name
             if m_path.exists():
@@ -237,10 +239,10 @@ class PredictionEngine:
             f"counties_with_stats={len(self.ndvi_stats)})."
         )
 
-    def get_available_months(self) -> List[str]:
+    def get_available_months(self) -> list[str]:
         return list(self.available_months)
 
-    def _resolve_month(self, county: str, requested_month: Optional[str] = None) -> str:
+    def _resolve_month(self, county: str, requested_month: str | None = None) -> str:
         c_name = normalize_county_name(county)
         hist = self.county_history.get(c_name)
         if hist is None or hist.empty or "year_month" not in hist.columns:
@@ -252,7 +254,7 @@ class PredictionEngine:
             return str(requested_month)
         return str(hist["year_month"].iloc[-1])
 
-    def _build_vector(self, county: str, month_key: Optional[str] = None) -> Optional[Dict[str, float]]:
+    def _build_vector(self, county: str, month_key: str | None = None) -> dict[str, float] | None:
         c_name = normalize_county_name(county)
         hist = self.county_history.get(c_name)
         resolved_month = self._resolve_month(c_name, month_key)
@@ -264,32 +266,10 @@ class PredictionEngine:
             return None
         return {c: float(row[c]) for c in self.feature_cols}
 
-    def _rule_features(self, county: str, month_key: Optional[str]) -> Dict[str, float]:
-        c_name = normalize_county_name(county)
-        vec = self._build_vector(c_name, month_key)
-        if vec is not None:
-            rain_mm = float(vec.get("rainfall_mm", 60.0))
-            rain_anom_mm = float(vec.get("rainfall_anomaly", 0.0))
-            rain_base = max(rain_mm - rain_anom_mm, 1.0)
-            rain_pct = 100.0 * rain_anom_mm / rain_base
-            soil_def = max(0.0, (0.45 - float(vec.get("soil_moisture", 0.27))) * 100.0)
-            return {
-                "rainfall_anomaly_30d": round(rain_pct, 2),
-                "ndvi_pasture_index": round(float(vec.get("ndvi_lag1", 0.5)), 4),
-                "temp_max_avg": round(float(vec.get("temp_mean_c", 25.0)), 2),
-                "soil_moisture_deficit": round(soil_def, 2),
-            }
-        return {
-            "rainfall_anomaly_30d": 0.0,
-            "ndvi_pasture_index": 0.5,
-            "temp_max_avg": 28.0,
-            "soil_moisture_deficit": 40.0,
-        }
-
     # --------------------------------------------------- TreeSHAP & scoring
     def _compute_shap(
-        self, vector: Dict[str, float]
-    ) -> Tuple[List[Dict[str, Any]], float]:
+        self, vector: dict[str, float]
+    ) -> tuple[list[dict[str, Any]], float]:
         """Compute exact TreeSHAP feature contributions (log-odds) for a 16-feature vector."""
         if self.model is None or not self.feature_cols:
             return [], 0.0
@@ -318,8 +298,8 @@ class PredictionEngine:
             logger.warning(f"SHAP computation unavailable: {exc}")
             return [], 0.0
 
-        items: List[Dict[str, Any]] = []
-        for col, s_val in zip(self.feature_cols, shap_vals):
+        items: list[dict[str, Any]] = []
+        for col, s_val in zip(self.feature_cols, shap_vals, strict=False):
             val = float(vector.get(col, 0.0))
             direction = (
                 "increases_risk"
@@ -339,14 +319,14 @@ class PredictionEngine:
         items.sort(key=lambda d: abs(d["shap_value"]), reverse=True)
         return items, round(base_val, 4)
 
-    def get_global_importance(self) -> List[Dict[str, Any]]:
+    def get_global_importance(self) -> list[dict[str, Any]]:
         """Return global feature importances across all 16 features of the LightGBM Champion model."""
         if self.model is None or not hasattr(self.model, "feature_importances_"):
             return []
         raw_imp = np.asarray(self.model.feature_importances_, dtype=float)
         total = float(raw_imp.sum()) or 1.0
         items = []
-        for col, imp in zip(self.feature_cols, raw_imp):
+        for col, imp in zip(self.feature_cols, raw_imp, strict=False):
             items.append({
                 "feature": col,
                 "label": FEATURE_LABELS.get(col, col),
@@ -359,8 +339,8 @@ class PredictionEngine:
     @staticmethod
     def _driver_from_shap(
         score: int,
-        shap_items: List[Dict[str, Any]],
-        vector: Dict[str, float],
+        shap_items: list[dict[str, Any]],
+        vector: dict[str, float],
     ) -> str:
         if shap_items:
             pos = [
@@ -394,8 +374,8 @@ class PredictionEngine:
         month_key: str,
         score: int,
         level: str,
-        vector: Optional[Dict[str, float]],
-        shap_items: List[Dict[str, Any]],
+        vector: dict[str, float] | None,
+        shap_items: list[dict[str, Any]],
         focus: str = "combined",
     ) -> str:
         """Build a clear, jargon-free explanation of the model's output and SHAP drivers."""
@@ -438,7 +418,9 @@ class PredictionEngine:
 
         return (
             f"**Plain-Language Summary for {county_name} ({month_key}):**\n"
-            f"- **Model Verdict:** The LightGBM Champion Model predicts a **{score}/100 ({level})** drought and forage risk.\n"
+            f"- **Model Verdict:** The champion model scores **{score}/100 ({level})** for low-vegetation "
+            "conditions in this month. It estimates how unusual the vegetation is against that county's own "
+            "training-period baseline; it does not forecast a future month, crop loss or forage deficit.\n"
             f"- **What the Field Numbers Show:** Monthly rainfall is **{rain_mm:.1f} mm** ({rain_word}), "
             f"land surface temperature is **{temp_c:.1f} °C**, root-zone soil moisture is **{soil_m:.2f} m³/m³**, "
             f"pasture greenness (NDVI) is **{ndvi_l1:.2f}**, and the **Forage Dryness Index** is **{fdi:.2f}**.\n"
@@ -449,28 +431,38 @@ class PredictionEngine:
     def _score(
         self,
         county: str,
-        month_key: Optional[str],
-        vector: Optional[Dict[str, float]],
-        rule_feats: Dict[str, float],
-    ) -> Tuple[int, str, str, str, List[Dict[str, Any]]]:
-        """Returns (score, level, driver, model_used, shap_contributions)."""
-        if self.model is not None and vector is not None and self.feature_cols:
-            try:
-                x = pd.DataFrame(
-                    [[float(vector[c]) for c in self.feature_cols]],
-                    columns=self.feature_cols,
-                )
-                proba = float(self.model.predict_proba(x)[0][1])
-                score = int(min(100, max(0, round(proba * 100))))
-                shap_items, _ = self._compute_shap(vector)
-                driver = self._driver_from_shap(score, shap_items, vector)
-                return score, get_risk_level(score), driver, self.model_name, shap_items
-            except Exception as exc:
-                logger.warning(f"ML scoring failed for {county}: {exc}")
-        raise ValueError(f"No trained-model score is available for {county} in {month_key}.")
+        month_key: str | None,
+        vector: dict[str, float] | None,
+    ) -> tuple[int, str, str, str, list[dict[str, Any]]]:
+        """Returns (score, band, driver, model_used, shap_contributions).
+
+        Raises rather than substituting another number: a missing or failing model is
+        an availability problem, not a reason to invent a score.
+        """
+        if self.model is None or not self.feature_cols:
+            raise ValueError(f"No trained model is loaded, so {county} in {month_key} cannot be scored.")
+        if vector is None:
+            raise ValueError(f"No complete historical feature row exists for {county} in {month_key}.")
+        missing = set(self.feature_cols) - set(vector)
+        if missing:
+            raise ValueError(f"Feature vector for {county} in {month_key} is missing {sorted(missing)}.")
+        try:
+            x = pd.DataFrame(
+                [[float(vector[c]) for c in self.feature_cols]],
+                columns=self.feature_cols,
+            )
+            proba = float(self.model.predict_proba(x)[0][1])
+        except Exception as exc:
+            raise ValueError(f"The model could not score {county} in {month_key}.") from exc
+        if not math.isfinite(proba) or not 0.0 <= proba <= 1.0:
+            raise ValueError(f"The model returned an invalid probability for {county} in {month_key}.")
+        score, band = score_and_band(proba)
+        shap_items, _ = self._compute_shap(vector)
+        driver = self._driver_from_shap(score, shap_items, vector)
+        return score, band, driver, self.model_name, shap_items
 
     # ----------------------------------------------------------- public API
-    def _get_county(self, db: Optional[Session], name: str) -> models.County:
+    def _get_county(self, db: Session | None, name: str) -> models.County:
         canonical = normalize_county_name(name)
         if db is not None:
             try:
@@ -524,20 +516,16 @@ class PredictionEngine:
 
     def predict_for_county_obj(
         self,
-        db: Optional[Session],
+        db: Session | None,
         county: models.County,
-        focus: Optional[str] = None,
-        persist: bool = False,
-        month: Optional[str] = None,
+        focus: str | None = None,
+        month: str | None = None,
         include_shap: bool = True,
     ) -> dict:
         focus = focus or county.primary_focus or "crops"
         month_key = self._resolve_month(county.name, month)
         vector = self._build_vector(county.name, month_key)
-        rule_feats = self._rule_features(county.name, month_key)
-        score, level, driver, used, shap_items = self._score(
-            county.name, month_key, vector, rule_feats
-        )
+        score, level, driver, used, shap_items = self._score(county.name, month_key, vector)
         rec = RECOMMENDATIONS[level] + _focus_advice(focus, level)
         plain = self.build_plain_explanation(
             county.name, month_key, score, level, vector, shap_items, focus=focus
@@ -556,37 +544,29 @@ class PredictionEngine:
             "features": vector,
             "shap_contributions": shap_items if include_shap else None,
         }
-        if persist and db is not None and getattr(county, "id", 0):
-            self._persist(db, county, out)
         return out
 
     def predict(
         self,
-        db: Optional[Session],
+        db: Session | None,
         county_name: str,
-        focus: Optional[str] = None,
-        persist: bool = True,
-        month: Optional[str] = None,
+        focus: str | None = None,
+        month: str | None = None,
     ) -> dict:
         county = self._get_county(db, county_name)
-        return self.predict_for_county_obj(
-            db, county, focus=focus, persist=persist, month=month
-        )
+        return self.predict_for_county_obj(db, county, focus=focus, month=month)
 
     def explain(
         self,
-        db: Optional[Session],
+        db: Session | None,
         county_name: str,
-        month: Optional[str] = None,
+        month: str | None = None,
     ) -> dict:
         """Return full local TreeSHAP waterfall + global feature importance for a county."""
         county = self._get_county(db, county_name)
         month_key = self._resolve_month(county.name, month)
         vector = self._build_vector(county.name, month_key) or {}
-        rule_feats = self._rule_features(county.name, month_key)
-        score, level, driver, _, shap_items = self._score(
-            county.name, month_key, vector, rule_feats
-        )
+        score, level, driver, _, shap_items = self._score(county.name, month_key, vector or None)
         _, base_val = self._compute_shap(vector)
         plain = self.build_plain_explanation(
             county.name, month_key, score, level, vector, shap_items, focus=county.primary_focus or "combined"
@@ -601,329 +581,9 @@ class PredictionEngine:
             "plain_explanation": plain,
             "local_shap": shap_items,
             "global_importance": self.get_global_importance(),
-            "feature_ranges": FEATURE_RANGES,
+            "feature_ranges": self.feature_ranges,
         }
 
-    def forecast_future(
-        self,
-        db: Optional[Session],
-        county_name: str,
-        target_month: int = 2,
-        focus: Optional[str] = "combined",
-        auto_derive_indices: bool = True,
-        overrides: Optional[Dict[str, Optional[float]]] = None,
-    ) -> dict:
-        """
-        Run a future forecast using explicit Champion Model feature sliders.
-        Compares the county's baseline against the user-configured future feature vector.
-        """
-        county = self._get_county(db, county_name)
-        focus_val = focus or county.primary_focus or "combined"
-        base_month = self._resolve_month(county.name, None)
-        base_vec = self._build_vector(county.name, base_month) or {}
-        base_rule = self._rule_features(county.name, base_month)
-
-        overrides = overrides or {}
-        future_vec = dict(base_vec)
-
-        # 1. Update seasonal cyclical features from target_month (1..12)
-        m_num = max(1, min(12, int(target_month)))
-        future_vec["month_sin"] = round(math.sin(2 * math.pi * m_num / 12.0), 6)
-        future_vec["month_cos"] = round(math.cos(2 * math.pi * m_num / 12.0), 6)
-
-        # 2. Apply any slider overrides provided by the user
-        for col in self.feature_cols:
-            if col in ("month_sin", "month_cos"):
-                continue
-            val = overrides.get(col)
-            if val is not None:
-                future_vec[col] = round(float(val), 6)
-
-        # 3. If auto_derive_indices is enabled, keep linked agro-climatic indices consistent
-        if auto_derive_indices and future_vec:
-            stats = self.ndvi_stats.get(county.name, {"mean": 0.52, "std": 0.08})
-            hist_rain = self.rain_clim.get(
-                (county.name, m_num),
-                float(base_vec.get("rainfall_mm", 65.0)) - float(base_vec.get("rainfall_anomaly", 0.0)),
-            )
-            if overrides.get("rainfall_anomaly") is None:
-                future_vec["rainfall_anomaly"] = round(
-                    float(future_vec.get("rainfall_mm", 65.0)) - hist_rain, 4
-                )
-            if overrides.get("ndvi_anomaly") is None:
-                future_vec["ndvi_anomaly"] = round(
-                    float(future_vec.get("ndvi_lag1", stats["mean"])) - stats["mean"], 6
-                )
-            if overrides.get("forage_dryness_index") is None:
-                soil_def = max(0.0, 0.45 - float(future_vec.get("soil_moisture", 0.25)))
-                ndvi_drop = max(
-                    0.0, stats["mean"] - float(future_vec.get("ndvi_lag1", stats["mean"]))
-                ) / (stats["std"] + 1e-6)
-                temp_val = float(future_vec.get("temp_mean_c", 24.0))
-                future_vec["forage_dryness_index"] = round(
-                    0.5 * ndvi_drop + 0.5 * (soil_def * (temp_val / 25.0)), 4
-                )
-
-        future_rule = {
-            "rainfall_anomaly_30d": float(future_vec.get("rainfall_anomaly", 0.0)),
-            "ndvi_pasture_index": float(future_vec.get("ndvi_lag1", 0.5)),
-            "temp_max_avg": float(future_vec.get("temp_mean_c", 25.0)),
-            "soil_moisture_deficit": max(0.0, (0.45 - float(future_vec.get("soil_moisture", 0.25))) * 100.0),
-        }
-
-        b_score, b_level, b_driver, b_used, b_shap = self._score(
-            county.name, base_month, base_vec, base_rule
-        )
-        f_month_label = f"2026-{m_num:02d} (Forecast)"
-        f_score, f_level, f_driver, f_used, f_shap = self._score(
-            county.name, f_month_label, future_vec, future_rule
-        )
-
-        b_rec = RECOMMENDATIONS[b_level] + _focus_advice(focus_val, b_level)
-        f_rec = RECOMMENDATIONS[f_level] + _focus_advice(focus_val, f_level)
-
-        b_plain = self.build_plain_explanation(
-            county.name, base_month, b_score, b_level, base_vec, b_shap, focus=focus_val
-        )
-        f_plain = self.build_plain_explanation(
-            county.name, f_month_label, f_score, f_level, future_vec, f_shap, focus=focus_val
-        )
-
-        baseline_out = {
-            "county_name": county.name,
-            "region": county.region,
-            "focus": focus_val,
-            "month": base_month,
-            "risk_score": b_score,
-            "risk_level": b_level,
-            "main_driver": b_driver,
-            "recommendation": b_rec,
-            "model_used": b_used,
-            "plain_summary": b_plain,
-            "features": base_vec,
-            "shap_contributions": b_shap,
-        }
-        forecast_out = {
-            "county_name": county.name,
-            "region": county.region,
-            "focus": focus_val,
-            "month": f_month_label,
-            "risk_score": f_score,
-            "risk_level": f_level,
-            "main_driver": f_driver,
-            "recommendation": f_rec,
-            "model_used": f_used,
-            "plain_summary": f_plain,
-            "features": future_vec,
-            "shap_contributions": f_shap,
-        }
-        delta = f_score - b_score
-        narrative = (
-            f"For {county.name} targeting month {f_month_label}, the LightGBM Champion Model projects a risk score of "
-            f"{f_score}/100 ({f_level}), a {delta:+d} point shift from the {base_month} baseline ({b_score}/100, {b_level}). "
-            f"Primary driver: {f_driver}."
-        )
-        return {
-            "county_name": county.name,
-            "region": county.region,
-            "target_month": m_num,
-            "baseline": baseline_out,
-            "forecast": forecast_out,
-            "score_delta": delta,
-            "narrative": narrative,
-            "gria_plain_analysis": f_plain,
-        }
-
-    def get_historical_series(self, county_name: str, months: int = 12) -> List[dict]:
-        """Compute historical monthly risk trajectory and agro-climatic series from the 2015-2025 county matrix."""
-        c_name = normalize_county_name(county_name)
-        hist = self.county_history.get(c_name)
-        if hist is None or hist.empty:
-            return []
-        tail_df = hist.tail(max(1, min(months, 132)))
-        series: List[dict] = []
-        for _, row in tail_df.iterrows():
-            m_key = str(row.get("year_month", DEFAULT_ACTIVE_MONTH))
-            vec = {
-                col: float(row[col])
-                for col in self.feature_cols
-                if col in row.index and pd.notna(row[col])
-            }
-            rule_f = self._rule_features(c_name, m_key)
-            score, level, _, _, _ = self._score(
-                c_name,
-                m_key,
-                vec if len(vec) == len(self.feature_cols) else None,
-                rule_f,
-            )
-            series.append({
-                "date": m_key,
-                "risk_score": score,
-                "risk_level": level,
-                "rainfall_mm": round(float(row.get("rainfall_mm", 0.0)), 2),
-                "soil_moisture": round(float(row.get("soil_moisture", 0.0)), 4),
-                "ndvi_lag1": round(float(row.get("ndvi_lag1", 0.0)), 4),
-                "forage_dryness_index": round(float(row.get("forage_dryness_index", 0.0)), 4),
-                "temp_mean_c": round(float(row.get("temp_mean_c", 0.0)), 2),
-            })
-        return series
-
-    def scenario(
-        self,
-        db: Optional[Session],
-        county_name: str,
-        rain_pct: float,
-        temp_c: float,
-        ndvi_shock: float,
-        month: Optional[str] = None,
-    ) -> dict:
-        county = self._get_county(db, county_name)
-        month_key = self._resolve_month(county.name, month)
-        base_vec = self._build_vector(county.name, month_key)
-        base_rule = self._rule_features(county.name, month_key)
-
-        sc_rule = dict(base_rule)
-        sc_rule["rainfall_anomaly_30d"] = base_rule["rainfall_anomaly_30d"] + rain_pct
-        sc_rule["temp_max_avg"] = base_rule["temp_max_avg"] + temp_c
-        sc_rule["ndvi_pasture_index"] = max(
-            0.05, min(0.95, base_rule["ndvi_pasture_index"] + ndvi_shock)
-        )
-
-        sc_vec = None
-        if base_vec is not None:
-            sc_vec = dict(base_vec)
-            factor = max(0.0, 1.0 + rain_pct / 100.0)
-            old_rain = float(base_vec["rainfall_mm"])
-            old_anom = float(base_vec["rainfall_anomaly"])
-            hist_rain_mean = old_rain - old_anom
-
-            new_rain = round(old_rain * factor, 4)
-            sc_vec["rainfall_mm"] = new_rain
-            sc_vec["rain_3m_sum"] = round(float(base_vec["rain_3m_sum"]) * factor, 4)
-            sc_vec["rainfall_anomaly"] = round(new_rain - hist_rain_mean, 4)
-
-            new_temp = round(float(base_vec["temp_mean_c"]) + temp_c, 4)
-            sc_vec["temp_mean_c"] = new_temp
-
-            stats = self.ndvi_stats.get(county.name, {"mean": 0.5, "std": 0.08})
-            new_lag1 = max(0.05, min(0.95, float(base_vec["ndvi_lag1"]) + ndvi_shock))
-            sc_vec["ndvi_lag1"] = round(new_lag1, 6)
-            sc_vec["ndvi_lag3"] = round(
-                max(0.05, min(0.95, float(base_vec["ndvi_lag3"]) + ndvi_shock * 0.5)),
-                6,
-            )
-            sc_vec["ndvi_roll3_mean"] = round(
-                max(0.05, min(0.95, float(base_vec["ndvi_roll3_mean"]) + ndvi_shock * 0.7)),
-                6,
-            )
-            sc_vec["ndvi_anomaly"] = round(new_lag1 - stats["mean"], 6)
-
-            soil_m = max(
-                0.03,
-                min(0.47, float(base_vec["soil_moisture"]) * (0.5 + 0.5 * factor) - 0.008 * temp_c),
-            )
-            sc_vec["soil_moisture"] = round(soil_m, 4)
-            soil_def = max(0.0, 0.45 - soil_m)
-            ndvi_drop = max(0.0, stats["mean"] - new_lag1) / (stats["std"] + 1e-6)
-            sc_vec["forage_dryness_index"] = round(
-                0.5 * ndvi_drop + 0.5 * (soil_def * (new_temp / 25.0)),
-                4,
-            )
-
-        o_score, o_level, o_driver, o_used, o_shap = self._score(
-            county.name, month_key, base_vec, base_rule
-        )
-        s_score, s_level, s_driver, s_used, s_shap = self._score(
-            county.name, month_key, sc_vec, sc_rule
-        )
-        rec_o = RECOMMENDATIONS[o_level] + _focus_advice(county.primary_focus, o_level)
-        rec_s = RECOMMENDATIONS[s_level] + _focus_advice(county.primary_focus, s_level)
-
-        original = {
-            "county_name": county.name,
-            "region": county.region,
-            "focus": county.primary_focus,
-            "month": month_key,
-            "risk_score": o_score,
-            "risk_level": o_level,
-            "main_driver": o_driver,
-            "recommendation": rec_o,
-            "model_used": o_used,
-            "plain_summary": self.build_plain_explanation(
-                county.name, month_key, o_score, o_level, base_vec, o_shap
-            ),
-            "features": base_vec,
-            "shap_contributions": o_shap,
-        }
-        scenario_out = {
-            "county_name": county.name,
-            "region": county.region,
-            "focus": county.primary_focus,
-            "month": month_key,
-            "risk_score": s_score,
-            "risk_level": s_level,
-            "main_driver": s_driver,
-            "recommendation": rec_s,
-            "model_used": s_used,
-            "plain_summary": self.build_plain_explanation(
-                county.name, month_key, s_score, s_level, sc_vec, s_shap
-            ),
-            "features": sc_vec,
-            "shap_contributions": s_shap,
-        }
-        narrative = (
-            f"Applying {rain_pct:+.0f}% rainfall, {temp_c:+.1f}°C temperature, and {ndvi_shock:+.2f} NDVI shift "
-            f"moves {county.name} from {o_level} ({o_score}/100) to {s_level} ({s_score}/100). "
-            f"Top driver under shock: {s_driver}."
-        )
-        return {
-            "county_name": county.name,
-            "original": original,
-            "scenario": scenario_out,
-            "score_delta": s_score - o_score,
-            "narrative": narrative,
-        }
-
-    def _persist(self, db: Session, county: models.County, pred: dict) -> None:
-        try:
-            db.add(models.Prediction(
-                county_id=county.id,
-                risk_score=pred["risk_score"],
-                risk_level=pred["risk_level"],
-                main_driver=pred["main_driver"],
-                recommendation=pred["recommendation"],
-                focus=pred["focus"],
-            ))
-            db.commit()
-        except Exception as exc:
-            db.rollback()
-            logger.warning(f"Prediction persist skipped: {exc}")
-
-
-@lru_cache()
+@lru_cache
 def get_engine() -> PredictionEngine:
     return PredictionEngine()
-
-
-def predict(
-    db: Optional[Session],
-    county_name: str,
-    focus: Optional[str] = None,
-    persist: bool = True,
-    month: Optional[str] = None,
-) -> dict:
-    """Module-level convenience wrapper used by Gria AI agent tools and routers."""
-    return get_engine().predict(db, county_name, focus=focus, persist=persist, month=month)
-
-
-def quick_risk(county_name: str, month: Optional[str] = None) -> Tuple[int, str]:
-    """Quickly get risk score and level for a county without requiring DB persistence."""
-    from database.connection import SessionLocal
-
-    db = SessionLocal() if SessionLocal is not None else None
-    try:
-        result = get_engine().predict(db, county_name, persist=False, month=month)
-        return result["risk_score"], result["risk_level"]
-    finally:
-        if db is not None:
-            db.close()

@@ -1,5 +1,4 @@
 """Test SQLAlchemy models."""
-import pytest
 import os
 import sys
 
@@ -7,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "apps", "backen
 
 
 def get_test_db():
-    from database.connection import SessionLocal, engine, Base
+    from database.connection import Base
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     test_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
@@ -18,7 +17,7 @@ def get_test_db():
 
 def test_model_relationships():
     """Test model relationships are correctly defined."""
-    from database.models import County, CountyFeature, Prediction, Report, ChatMessage, Upload
+    from database.models import ChatMessage, County, CountyFeature, Prediction, Report, Upload
 
     county = County(name="Turkana", region="Rift Valley",
                       latitude=3.1167, longitude=35.6000, primary_focus="crops")
@@ -50,7 +49,7 @@ def test_model_relationships():
 def test_crud_operations():
     """Test CRUD operations."""
     TestSessionLocal, test_engine = get_test_db()
-    from database import models, crud
+    from database import crud, models
 
     db = TestSessionLocal()
     try:

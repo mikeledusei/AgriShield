@@ -1,0 +1,254 @@
+# CHANGELOG
+
+Every change made in this release, grouped by area. Each entry names the files touched
+and why the change matters, so a reviewer can check one without reading everything.
+
+Two entries change behaviour for existing callers; they are listed under
+[Breaking changes](#breaking-changes) first.
+
+---
+
+## Breaking changes
+
+### 1. Out-of-distribution input is rejected, not silently scored
+
+**Files:** `apps/backend/schemas/manual_prediction.py`, `apps/backend/routers/manual_predictions.py`,
+`apps/frontend/streamlit_app.py`, `apps/frontend/README.md`
+
+`POST /predictions/from-inputs`, `/from-measurements` and `/from-csv` now return **422**
+when a feature value falls outside the range recorded in
+`ml_artifacts/training_feature_ranges.json`, naming the offending field and its unit.
+Resubmit with `accept_extrapolation=true` (JSON) or an `accept_extrapolation` column
+(CSV) to score it anyway; the response then carries `extrapolated: true`.
+
+**Why.** The champion model is a tree ensemble: outside the training range it returns
+the boundary leaf's value with no indication that the input is unlike anything it saw.
+The motivating case was forage dryness entered as `40` instead of `0.4` — a physically
+impossible value that previously produced a confident-looking score.
+
+**Not a blunt cutoff.** The bounds are derived from the training matrix, not hand-written.
+An earlier hand-drafted set would have rejected five legitimate 2024 flood-season
+counties; the derived set does not. Stored historical rows are scored directly and are
+unaffected.
+
+### 2. One risk vocabulary
+
+**Files:** `apps/backend/core/scales.py`, `apps/frontend/shared/scales.py`,
+`services/prediction_service.py`
+
+`Lower / Moderate / Elevated / High` everywhere. The unused
+`SAFE / MODERATE / HIGH / CRITICAL` ladder is gone from API responses. `core/scales.py` is
+the single definition; the dashboard mirrors it and `tests/test_scales.py` asserts the
+two stay identical.
+
+**Why.** Four different band vocabularies existed across the codebase, so the same score
+could be labelled differently depending on which layer produced the label.
+
+---
+
+## Bugs fixed
+
+| File | Bug | Effect if unfixed |
+| --- | --- | --- |
+| `apps/frontend/streamlit_app.py` | `hoverinfo='text+marker'` is not a valid plotly value | The maize-yields page raised on render |
+| `apps/frontend/streamlit_app.py`, `shared/map_data.py` | Read `latitude`/`longitude` from GeoJSON properties that do not exist | Every county plotted at (0, 0) in the Gulf of Guinea |
+| `apps/backend/app/main.py` | Module defined no `app` | The documented entry point could not start |
+| `apps/backend/core/database.py` | Module was a docstring only, yet routers imported `get_db` from it | `ImportError` at collection; the whole suite failed |
+| `services/prediction_service.py` | `get_risk_level` / `RECOMMENDATIONS` defined twice | The trailing copy silently won; edits to the first did nothing |
+| `routers/manual_predictions.py` | `/predictions/{path:path}` catch-all returned 410 | It shadowed every live route under `/predictions` |
+| `routers/health.py` | `/health` reported healthy with a missing model or unapplied migrations | A broken deployment passed its health check |
+| `apps/frontend/shared/county_map.py` | Label anchor placed on the edge facing *away* from the dot | Every label sat one line height onto its neighbour |
+
+### Health probes split
+
+**Files:** `routers/health.py`, `render.yaml`, `apps/backend/Dockerfile`, `docs/DEPLOYMENT.md`
+
+`GET /health` is liveness and touches nothing. `GET /health/ready` performs a probe
+inference, compares the artifact SHA-256, checks the database and required tables, and
+returns **503** with a `problems` list. `render.yaml` and the image `HEALTHCHECK` use the
+readiness path.
+
+**Why.** Liveness and readiness were the same endpoint, so the only signal a platform
+had was "the process is up" — which is true of a process that cannot score.
+
+---
+
+## Reliability
+
+- **Schema owned by Alembic.** Four revisions
+  (`20261120_baseline → _snapshots → _history → _retention_indexes`) adopt every table
+  that `create_all` used to create. `init_db.py` is now an alias. The test database is
+  built from migrations only, so a missing revision fails CI. `alembic.ini` sets
+  `path_separator = os`, clearing a deprecation warning.
+- **Artifact integrity.** `joblib.load` executes arbitrary code, so the file is hashed
+  and compared with the recorded digest *before* deserialisation
+  (`services/prediction_service.py`). A mismatch makes scoring unavailable; the score is
+  never substituted.
+- **Bounded database waits.** `core/config.py` sets pool size, connection timeout and
+  recycle for PostgreSQL, so a Neon cold start cannot pin a request thread indefinitely.
+- **Live weather.** Fetches outside the cache lock and backs off 30 s after a failure, so
+  a slow provider cannot block concurrent requests.
+- **Analysis caching.** Historical analysis (three full model passes per report) is
+  memoised on `(county, month, model digest)`.
+- **Error classes separated.** Report persistence distinguishes a storage failure (503)
+  from a serialisation bug (500) and logs both differently.
+- **Bounded DOCX extraction.** Extraction stops at the text limit instead of building the
+  whole document first.
+- **Per-request logging.** Request ids are bound per request, returned in `X-Request-ID`,
+  and included in every access-log line (`middleware/request_context.py`).
+  `LOG_LEVEL` is honoured.
+
+## Security
+
+- **Production fails closed** (`core/config.py`): `APP_ENV=production` refuses to start on
+  placeholder secrets, anonymous access, a missing `DATABASE_URL`, or wildcard/empty CORS.
+- **CORS** enumerates methods and headers; wildcard-plus-credentials is refused.
+- **Authentication** distinguishes a bad token (401 with `WWW-Authenticate: Bearer`) from
+  an unconfigured identity provider (503).
+- **Streamlit** no longer disables CORS. `enableCORS` and XSRF protection stay on; host and
+  origin allowlists are supplied per environment and expanded at container start
+  (`apps/frontend/.streamlit/config.toml`, `apps/frontend/Dockerfile`).
+
+## County map
+
+- **One builder** (`apps/frontend/shared/county_map.py`) serves all three map pages, so
+  Live conditions, Reported maize yields and the Historical explorer behave alike.
+- **Every county labelled**, with a leader line where a name must clear its marker; long
+  names wrap at the hyphen; a caption reports how many names fit.
+- **Dot colour is the score band**, one trace per band so the legend matches the palette
+  exactly. Weather and yield values use a separate continuous scale so they cannot be
+  read as a risk band.
+- **No third-party tile basemap.** Tiles load from the viewer's browser, so the map would
+  be blank offline and would add a licence obligation. Rationale and the placement
+  algorithm are in `docs/MAP_DESIGN.md`.
+- **Payload 6.8 MB → 323 KB.** `apps/frontend/scripts/simplify_geojson.py` applies
+  Douglas-Peucker (0.01°, ~1 km) to produce
+  `assets/kenya_counties_simplified.geojson`; the full file remains for GIS use.
+- **Label placement bug fixed:** all marker positions are now registered before placement
+  begins, so a label cannot land on a dot of a county processed later.
+
+## Wording
+
+- **Gria no longer over-claims** (`services/prediction_service.py`). The summary said the
+  model "predicts drought and forage risk". It now says it scores how unusual the month's
+  vegetation is against that county's training baseline, and does not forecast a future
+  month, crop loss or forage deficit.
+
+  **Why.** The model's target is `ndvi_mean < ndvi_25th_pct` for the *same* month — a
+  one-month classification with no future label anywhere in the training code. Calling it
+  a forecast misstates it to the person making the decision. A regression test pins the
+  wording.
+
+## Removed
+
+- **~2,300 lines of unreachable backend code**, and the `test_imports` list that was the
+  only thing keeping it importable: `routers/{predictions,reports,uploads,storage}.py`,
+  `agents/file_processor.py`,
+  `services/{pdf_generator,export_service,feature_service,cache_service}.py`,
+  `core/redis_client.py`, `middleware/auth.py`, `schemas/predictions.py`, `app/main.py`.
+- **The fictional rule-based fallback scorer.** It invented a score when no model was
+  loaded. Scoring now fails loudly instead.
+- **~1,100 lines of unused frontend helpers**: `shared/{ui_helpers,types,constants,kenya_counties}.py`.
+- **Unused dependencies** — see the table below.
+
+## Dependencies, CI and containers
+
+- **Requirements split by purpose**: `apps/backend/requirements.txt` (runtime),
+  `apps/backend/requirements-research.txt` (research scripts), and
+  `apps/backend/requirements-dev.txt` (test and lint tooling). The API image installs only
+  the runtime set.
+- **Dependencies nothing imported removed**:
+
+  | File | Removed | Evidence |
+  | --- | --- | --- |
+  | `data_pipeline/requirements.txt` | `geopandas`, `shapely`, `fiona` | Nothing imports them; the GeoJSON is read with the standard `json` module |
+  | `data_pipeline/requirements.txt` | `tqdm`, `python-dotenv` | No import anywhere in `data_pipeline/scripts` |
+  | `data_pipeline/requirements.txt` | `jupyter`, `ipykernel` | Notebook-only; the scripts do not need them |
+  | `ml-models/requirements.txt` | `jupyter`, `ipykernel`, `python-dotenv` | Same |
+
+  Verified afterwards: every third-party import in `apps/`, `data_pipeline/scripts/` and
+  `ml-models/scripts/` is declared in a requirements file, and `clean_data.py`,
+  `train.py` and `prepare_maize_outcomes.py` still start.
+- **`constraints.txt`** pins the resolved set. All 26 pins were checked against PyPI and
+  exist. `scikit-learn==1.9.0` is exact and commented because the artifact was fitted with it.
+- **CI** (`.github/workflows/ci.yml`): Python 3.12, install from constraints, `ruff check`,
+  `compileall`, apply → roll back → apply migrations on a throwaway SQLite database, run
+  the suite, and an informational `pip-audit`.
+- **Clean-environment proof:** a fresh venv installed from the declared files alone passes
+  **79 tests, ruff, compileall and the migration round-trip**. This is what CI does.
+- **`apps/backend/Dockerfile`**: Python 3.12-slim, `libgomp1` for LightGBM, non-root uid
+  10001, readiness-based `HEALTHCHECK`, migrations documented as a release step.
+  Rehearsed outside Docker against a replica of the image layout: migrations → seed (47
+  counties) → `/health/ready` returns **200**.
+- **`apps/frontend/Dockerfile`**: non-root uid 10002, health check on `/_stcore/health`,
+  start-time expansion of the host/origin allowlists. Rehearsed the same way: health `ok`,
+  page returns 200.
+- **`render.yaml`**: `preDeployCommand` runs migrations and seeding, readiness health
+  check, `PUBLIC_MODE=False`, secrets generated or marked `sync: false`.
+- **`.dockerignore`** cuts the build context. **`.devcontainer`** starts both services and
+  passes `allowedHosts` for localhost.
+
+## Repository
+
+- **`.gitignore` no longer un-ignores every CSV.** `data_pipeline/data/` is ignored and
+  the tracked data files are an explicit allowlist, verified with `git check-ignore`.
+- **Untracked binaries** (files remain on disk): the 12.5 MB slide deck, research
+  `.joblib` files, the maize `.xlsx` mirror, 16 raw and processed CSVs, and the duplicate
+  `data_pipeline/data/kenya_counties.geojson` (byte-identical to the frontend copy, md5
+  `61a522a6…`, unread by any script). Tracked size fell from 23 MB to ~13 MB. The policy
+  for research artifacts is in `ml-models/research_runs/README.md`.
+- **`pyproject.toml`** adds ruff (F, E, W, I, B, UP, S) and pytest configuration with
+  targeted per-file ignores, rather than blanket disables.
+
+## Tests added
+
+`tests/conftest.py` provisions an isolated SQLite database from the migrations, so a test
+run never touches a development database. New coverage:
+
+| Test | Guards |
+| --- | --- |
+| `test_scales.py` | Frontend and backend band definitions stay identical |
+| `test_auth.py` | Protected mode returns 401/503 correctly (previously untested) |
+| `test_backend.py::test_readiness_*` | Readiness fails on a missing model, bad hash or unapplied migrations |
+| `test_backend.py::test_csv_upload_accepts_the_extrapolation_column` | The opt-in works through the CSV path, not only JSON |
+| `test_backend.py::test_summary_does_not_claim_a_forecast` | The Gria wording cannot regress |
+| `test_backend.py::test_document_extraction_is_bounded_for_docx` | Extraction truncates instead of materialising a huge document |
+| `test_backend.py::test_outcomes_survive_a_malformed_row` | One bad reported row does not break the endpoint |
+| `test_frontend.py::test_county_map_places_labels_without_overlap` | No two labels overlap; none leaves the frame |
+
+Suite total: **79 passing**, no deprecation warnings (`-W error::DeprecationWarning`
+clean).
+
+## Documentation
+
+- **`README.md`** — corrected claims to match the code, real setup steps, the 422
+  behaviour, the readiness endpoints, and a pointer to the runbook.
+- **`docs/DEPLOYMENT.md`** (new) — preconditions, startup validation, release sequence,
+  rollback, health checks, dashboard deployment, retention cron, backups, model promotion,
+  known limitations.
+- **`docs/MAP_DESIGN.md`** (new) — map decisions, colour scale, label algorithm, assets.
+- **`docs/CHANGELOG.md`** (this file) — supersedes `CHANGES_MADE.md` and
+  `docs/RELEASE_NOTES.md`, which described a session rather than the product.
+- **`docs/PROJECT_DOCUMENTATION.md`** — now an index of the documents above rather than a
+  pointer to documents that had moved on.
+- **`docs/DATA_MODEL_CARD.md`** — added the accepted-input-distribution section.
+- **`apps/backend/.env.example`, `apps/frontend/.env.example`** — rewritten. The old files
+  listed variables the code never read and omitted several it requires.
+
+## Known limitations
+
+Stated here so they are not mistaken for oversights:
+
+- **No real forecast.** The champion model classifies the current month's vegetation
+  against the county's training baseline. A genuine forecast needs a future-month label,
+  rolling-origin validation, and measured skill against a seasonal baseline; see
+  `docs/DATA_MODEL_CARD.md`.
+- **No in-process rate limiting.** Quotas belong at the edge for `/gria/*`,
+  `/documents/extract` and `/live/weather`.
+- **Per-process caches.** Multiple workers multiply upstream provider calls.
+- **`PUBLIC_MODE=True`** is a prototype setting, not a security boundary.
+- **Docker images were rehearsed outside Docker** (no daemon in the build environment) by
+  reproducing the image filesystem layout and running the same commands. `docker build`
+  itself is unverified here.
+- **External services are untested by the suite**: Supabase, NVIDIA NIM and Open-Meteo all
+  degrade to a labelled unavailable state and are never faked.

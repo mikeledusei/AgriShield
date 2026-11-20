@@ -1,10 +1,12 @@
-"""Gria AI chat endpoint."""
-from fastapi import APIRouter, Depends, HTTPException
-
-from core.auth import get_current_user
-from schemas.pydantic_models import GriaChatRequest, GriaChatResponse
+"""Gria AI chat and evidence analysis."""
 from agents import gria_agent
+from core.auth import get_current_user
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from schemas.manual_prediction import ManualPredictionRequest
+from schemas.pydantic_models import GriaChatRequest, GriaChatResponse
 from seed_counties import normalize_county_name
+from services.analysis_service import explain_evidence, historical_evidence, manual_evidence
 from services.prediction_service import get_engine
 
 router = APIRouter(prefix="/gria", tags=["gria"])
@@ -16,12 +18,14 @@ def chat_with_gria(
     user: dict = Depends(get_current_user),
 ):
     engine = get_engine()
-    county = normalize_county_name(request.county_name)
-    history = engine.county_history.get(county)
-    if not request.month or history is None or request.month not in set(history["year_month"].astype(str)):
-        raise HTTPException(status_code=422, detail="Choose a county and a historical month with available data.")
     if engine.model is None:
         raise HTTPException(status_code=503, detail="The trained model is unavailable.")
+    if not request.county_name or not request.month:
+        raise HTTPException(status_code=422, detail="Choose a county and a historical month with available data.")
+    county = normalize_county_name(request.county_name)
+    history = engine.county_history.get(county)
+    if history is None or request.month not in set(history["year_month"].astype(str)):
+        raise HTTPException(status_code=422, detail="Choose a county and a historical month with available data.")
     try:
         response = gria_agent.chat(
             request.message,
@@ -40,11 +44,6 @@ def chat_with_gria(
         main_driver=response.get("main_driver"),
         plain_summary=response.get("plain_summary"),
     )
-
-
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from schemas.manual_prediction import ManualPredictionRequest
-from services.analysis_service import historical_evidence, manual_evidence, explain_evidence
 
 
 class AnalyzeRequest(BaseModel):

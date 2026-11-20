@@ -1,24 +1,34 @@
 """Reproducible retrospective comparison. Never promotes or replaces the deployed model."""
-from pathlib import Path
 import argparse
 import hashlib
 import importlib.metadata
 import json
 import sys
+from pathlib import Path
+
 import joblib
 import pandas as pd
+from lightgbm import LGBMClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (accuracy_score, average_precision_score, brier_score_loss,
-                             confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score)
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
-from data_pipeline.scripts.experiment import DEFAULT_PANEL, FEATURES, load_panel, build_experiment
+from data_pipeline.scripts.experiment import DEFAULT_PANEL, FEATURES, build_experiment, load_panel
+
 ARTIFACT_DIR = PROJECT_ROOT / 'apps/backend/ml_artifacts'
 
 
@@ -69,7 +79,7 @@ def run_experiment(panel_path: Path, out: Path):
             prob = model.predict_proba(rows[FEATURES])[:, 1]
             results[name][split] = metrics(rows.target_risk, prob)
             predictions.extend({'model': name, 'split': split, 'county': c, 'year': int(y), 'month': int(m), 'target': int(t), 'score': float(p)}
-                               for c, y, m, t, p in zip(rows.county, rows.year, rows.month, rows.target_risk, prob))
+                               for c, y, m, t, p in zip(rows.county, rows.year, rows.month, rows.target_risk, prob, strict=False))
     selected = max(models, key=lambda n: (results[n]['validation_2022_2023']['f1'], results[n]['validation_2022_2023']['roc_auc'] or 0))
     out.mkdir(parents=True, exist_ok=True)
     joblib.dump(models[selected], out / 'research_candidate.joblib')

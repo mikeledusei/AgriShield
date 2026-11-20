@@ -1,14 +1,24 @@
-"""Run migrations against the configured SQLAlchemy database."""
+"""Run migrations against the configured SQLAlchemy database.
+
+Alembic owns the schema. ``alembic upgrade head`` provisions a fresh database and
+``alembic downgrade`` unwinds it, so nothing else may call ``create_all``.
+"""
+import logging
 from logging.config import fileConfig
+
 from alembic import context
-from database.connection import engine, Base
-from database import models  # noqa: F401
+from database import models  # noqa: F401  (import registers the tables)
+from database.connection import Base, engine
 
 config = context.config
 if config.config_file_name:
     fileConfig(config.config_file_name)
+else:  # programmatic use (tests, scripts) has no ini file
+    logging.basicConfig(level=logging.WARNING)
+
 if engine is None:
     raise RuntimeError('DATABASE_URL is required for migrations')
+
 if context.is_offline_mode():
     context.configure(url=str(engine.url), target_metadata=Base.metadata, literal_binds=True)
     with context.begin_transaction():

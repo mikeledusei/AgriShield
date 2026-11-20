@@ -1,7 +1,8 @@
 """Download original CC-BY research files, verifying publisher MD5 and never overwriting."""
-from pathlib import Path
 import hashlib
+import urllib.parse
 import urllib.request
+from pathlib import Path
 
 OUT = Path(__file__).resolve().parents[1] / 'data' / 'external' / 'lam_odongo_2022'
 FILES = {
@@ -19,6 +20,8 @@ def download():
                 raise ValueError(f'{path} already exists but differs from the publisher hash; refusing to overwrite it.')
             print(f'Already verified: {path}')
             continue
+        if urllib.parse.urlparse(url).scheme != 'https':
+            raise ValueError(f'{name} must be fetched over https; refusing {url!r}.')
         with urllib.request.urlopen(url, timeout=30) as response:
             raw = response.read(2_000_001)
         if len(raw) > 2_000_000 or hashlib.md5(raw, usedforsecurity=False).hexdigest() != expected:

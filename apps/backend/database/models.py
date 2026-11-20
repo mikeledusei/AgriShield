@@ -1,15 +1,27 @@
-"""SQLAlchemy models for the AgriShield database."""
-from datetime import datetime, timezone
+"""SQLAlchemy models for the AgriShield database.
+
+Schema changes must ship with an Alembic revision in ``migrations/versions``.
+``Base.metadata.create_all`` is used by tests only.
+"""
+from datetime import UTC, datetime
+
+from database.connection import Base
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import relationship
-from database.connection import Base
 
 
 def _utcnow() -> datetime:
-    """Return UTC timestamp without deprecated datetime.utcnow()."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    """Return a naive UTC timestamp (the columns are timezone-naive by convention)."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class County(Base):
@@ -92,16 +104,21 @@ class Upload(Base):
 
 class AssessmentReportSnapshot(Base):
     """Immutable prediction snapshot, protected by an unguessable capability."""
+
     __tablename__ = "assessment_report_snapshots"
+
     id = Column(String(36), primary_key=True)
     access_hash = Column(String(64), nullable=False)
     snapshot_json = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    # Indexed: every save runs a retention delete filtered on this column.
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)
 
 
 class HistoryRecord(Base):
     """Private saved assessment, accessible only with a user-held history key."""
-    __tablename__ = 'assessment_history'
+
+    __tablename__ = "assessment_history"
+
     id = Column(String(36), primary_key=True)
     history_key_hash = Column(String(64), nullable=False, index=True)
     snapshot_json = Column(Text, nullable=False)

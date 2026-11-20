@@ -2,8 +2,8 @@
 Authentication was intentionally removed from the product flow.
 """
 
-from fastapi import APIRouter
 from core.config import settings
+from fastapi import APIRouter
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

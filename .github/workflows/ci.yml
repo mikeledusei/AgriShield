@@ -1,7 +1,12 @@
-name: Tests
+name: CI
+
 on:
   push:
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -15,10 +20,33 @@ jobs:
           cache: pip
           cache-dependency-path: |
             apps/backend/requirements.txt
+            apps/backend/requirements-dev.txt
             apps/frontend/requirements.txt
+            constraints.txt
+
       - name: Install dependencies
-        run: pip install -r apps/backend/requirements.txt -r apps/frontend/requirements.txt "matplotlib>=3.9,<4" pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r apps/backend/requirements-dev.txt -r apps/frontend/requirements.txt -c constraints.txt
+
+      - name: Lint
+        run: ruff check .
+
       - name: Compile Python sources
         run: python -m compileall -q apps/backend apps/frontend data_pipeline/scripts ml-models/scripts
+
+      - name: Migrations apply and roll back
+        env:
+          DATABASE_URL: sqlite:///./ci_migrations.db
+        run: |
+          cd apps/backend
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
       - name: Run test suite
         run: python -m pytest tests -q
+
+      - name: Dependency audit (informational)
+        continue-on-error: true
+        run: pip-audit --skip-editable

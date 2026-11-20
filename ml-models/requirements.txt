@@ -1,23 +1,16 @@
-# ===== Data Manipulation =====
+# Packages for the reproducible scripts in ml-models/scripts.
 pandas>=2.2.0
 numpy>=1.26.0
 
-# ===== Machine Learning =====
-scikit-learn>=1.4.0            # Logistic Regression, Random Forest, metrics
-xgboost>=2.0.0                 # Champion model
-lightgbm>=4.3.0                # Gradient boosting
-joblib>=1.4.0                  # Save/load .joblib models
+# Models compared by the research experiment
+scikit-learn>=1.4.0            # logistic regression, random forest, metrics
+xgboost>=2.1.0                 # one of the four compared models
+lightgbm>=4.3.0                # the champion artifact's library
+joblib>=1.4.0                  # artifact serialisation
 
-# ===== Model Interpretability =====
-shap>=0.45.0                   # Feature importance (supports Chapter 4)
+# SHAP contributions reported by the experiment
+shap>=0.45.0
 
-# ===== Visualizations =====
-matplotlib>=3.8.0
+# Figures written to ml-models/experiments/
+matplotlib>=3.9.0,<4.0
 seaborn>=0.13.0
-
-# ===== Notebooks =====
-jupyter>=1.0.0
-ipykernel>=6.29.0
-
-# ===== Utilities =====
-python-dotenv>=1.0.0           # Load environment variables

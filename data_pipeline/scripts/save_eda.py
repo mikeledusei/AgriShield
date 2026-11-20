@@ -2,9 +2,12 @@
 import argparse
 import hashlib
 from pathlib import Path
+
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 try:
     from .clean_data import clean_data
 except ImportError:
@@ -24,11 +27,17 @@ def save_eda(output):
     fig, ax = plt.subplots(figsize=(9, 4))
     ax.bar(monthly.index, monthly.rainfall_mm, color='#79a879')
     ax.set(xlabel='Calendar month', ylabel='Mean monthly rainfall (mm)', title='Rainfall seasonality in the packaged panel')
-    ax.set_xticks(range(1, 13)); fig.tight_layout(); fig.savefig(output / 'rainfall_by_month.png', dpi=140); plt.close(fig)
+    ax.set_xticks(range(1, 13))
+    fig.tight_layout()
+    fig.savefig(output / 'rainfall_by_month.png', dpi=140)
+    plt.close(fig)
     fig, ax = plt.subplots(figsize=(9, 4))
     ax.plot(monthly.index, monthly.ndvi_mean, marker='o', color='#2b6842')
     ax.set(xlabel='Calendar month', ylabel='Mean NDVI', title='Vegetation seasonality in the packaged panel')
-    ax.set_xticks(range(1, 13)); fig.tight_layout(); fig.savefig(output / 'ndvi_by_month.png', dpi=140); plt.close(fig)
+    ax.set_xticks(range(1, 13))
+    fig.tight_layout()
+    fig.savefig(output / 'ndvi_by_month.png', dpi=140)
+    plt.close(fig)
     missing = {col: int(panel[col].sum()) for col in panel if col.endswith('_imputed')}
     annual = panel.groupby('year')['ndvi_mean'].mean()
     text = f'''# Packaged panel: exploratory analysis

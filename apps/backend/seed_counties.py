@@ -1,8 +1,12 @@
-"""Seed all 47 Kenyan counties into the counties table. Run: python seed_counties.py"""
-from typing import Optional
-from sqlalchemy.orm import Session
-from database.connection import SessionLocal, Base, engine, is_configured
+"""Seed all 47 Kenyan counties into the counties table. Run: python seed_counties.py.
+
+The table must already exist: run ``alembic upgrade head`` (or ``init_db.py``) first.
+Seeding is idempotent and safe to run on every deploy.
+"""
+
 from database import models
+from database.connection import SessionLocal, is_configured
+from sqlalchemy.orm import Session
 
 # Canonical 47 Kenyan counties: (name, region, latitude, longitude, primary_focus)
 COUNTIES = [
@@ -89,7 +93,7 @@ for _c_name, *_ in COUNTIES:
     COUNTY_ALIASES[_c_name.lower()] = _c_name
 
 
-def normalize_county_name(raw_name: Optional[str]) -> str:
+def normalize_county_name(raw_name: str | None) -> str:
     """Resolve common spelling/hyphenation variants to canonical county names."""
     if not raw_name:
         return ""
@@ -104,10 +108,8 @@ def normalize_county_name(raw_name: Optional[str]) -> str:
 
 
 def ensure_counties_seeded(db: Session) -> None:
-    """Ensure tables exist and all 47 Kenyan counties are seeded when table is empty."""
+    """Insert any missing counties. Idempotent; never creates tables."""
     try:
-        if engine is not None:
-            Base.metadata.create_all(bind=engine)
         count = db.query(models.County).count()
         if count >= 47:
             return
@@ -134,7 +136,6 @@ def seed():
         print("DATABASE_URL is not set. Add it to apps/backend/.env first.")
         return
 
-    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         existing = {c.name for c in db.query(models.County).all()}

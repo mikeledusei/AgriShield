@@ -1,10 +1,10 @@
 """Lazy Supabase client initialization."""
-from typing import Optional
-from fastapi import HTTPException, status
-from supabase import create_client, Client
-from core.config import settings
 
-_supabase_client: Optional[Client] = None
+from core.config import settings
+from fastapi import HTTPException, status
+from supabase import Client, create_client
+
+_supabase_client: Client | None = None
 
 
 def is_supabase_configured() -> bool:
@@ -35,5 +35,5 @@ def get_supabase() -> Client:
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Failed to initialize Supabase client: {exc}",
-        )
+            detail="Failed to initialize the Supabase client.",
+        ) from exc
