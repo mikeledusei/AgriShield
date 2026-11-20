@@ -42,7 +42,6 @@ credentials.json
 # first, and the file allowlist below decides what actually gets tracked.
 data_pipeline/data/**
 !data_pipeline/data/**/
-!data_pipeline/data/**/
 *.tsv
 *.parquet
 *.feather
