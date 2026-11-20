@@ -1,5 +1,4 @@
 """Data and experimental workflow tests."""
-import importlib.util
 from pathlib import Path
 
 import pandas as pd
@@ -32,25 +31,6 @@ def test_panel_validation_and_split_baselines():
             load_panel(tmp.name)
 
 
-def test_end_to_end_experiment_does_not_promote_model(tmp_path):
-    path = ROOT / 'ml-models/scripts/train.py'
-    spec = importlib.util.spec_from_file_location('research_train', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    report = module.run_experiment(DEFAULT_PANEL, tmp_path)
-    assert report['selected_on_validation'] in report['results']
-    assert 'NOT an independent holdout' in report['evaluation']
-    assert (tmp_path / 'research_candidate.joblib').exists()
-    for name in ['logistic_regression', 'random_forest', 'xgboost', 'lightgbm']:
-        assert (tmp_path / f'{name}.joblib').exists()
-    with pytest.raises(ValueError, match='not empty'):
-        module.run_experiment(DEFAULT_PANEL, tmp_path)
-    assert (tmp_path / 'metrics.json').exists()
-    assert (tmp_path / 'predictions.csv').exists()
-    for result in report['results'].values():
-        assert result['validation_2022_2023']['samples'] > 0
-
-
 def test_cleaning_requires_explicit_imputation_and_preserves_flags():
     from data_pipeline.scripts.clean_data import clean_data
     with pytest.raises(ValueError, match='imputation'):
@@ -65,7 +45,7 @@ def test_cleaning_requires_explicit_imputation_and_preserves_flags():
 def test_panel_rejects_gaps_before_computing_lags(tmp_path):
     import pandas as pd
 
-    from data_pipeline.scripts.experiment import DEFAULT_PANEL, load_panel
+    from data_pipeline.scripts.experiment import load_panel
     panel = pd.read_csv(DEFAULT_PANEL)
     panel = panel.drop(index=panel.index[1])
     filename = tmp_path / 'gap.csv'
@@ -110,26 +90,3 @@ def test_maize_outcomes_have_real_years_and_quality_flags():
     assert 2019 not in set(result.year)
     assert len(result[result.quality_flag != 'ok']) == 3
     assert result.loc[(result.county == 'Mandera') & (result.year == 2012), 'quality_flag'].iloc[0] == 'yield_inconsistent_with_production_and_area'
-
-
-def test_maize_experiment_holdout_and_baseline_are_separate(tmp_path):
-    path = ROOT / 'ml-models/scripts/maize_outcome_experiment.py'
-    spec = importlib.util.spec_from_file_location('maize_experiment', path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    data = pd.read_csv(module.OUTCOMES)
-    original = module.build_panel()
-    # An altered validation target must not influence the held-out county baseline.
-    data.loc[data.year == 2018, 'yield_tonnes_per_ha'] = 999
-    changed = tmp_path / 'changed.csv'
-    data.to_csv(changed, index=False)
-    altered = module.build_panel(changed, module.CLIMATE)
-    pd.testing.assert_series_equal(original.loc[original.year == 2020, 'prior_yield_mean'].reset_index(drop=True),
-                                   altered.loc[altered.year == 2020, 'prior_yield_mean'].reset_index(drop=True))
-    out = tmp_path / 'results'
-    report = module.run(out)
-    assert report['target'].startswith('Reported annual maize yield')
-    assert report['results'][report['selected_model']]['holdout_2020']['samples'] == 46
-    assert all((out / f'{name}.joblib').exists() for name in ['ridge', 'random_forest', 'xgboost', 'lightgbm'])
-    with pytest.raises(ValueError, match='not empty'):
-        module.run(out)

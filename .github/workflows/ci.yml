@@ -33,7 +33,7 @@ jobs:
         run: ruff check .
 
       - name: Compile Python sources
-        run: python -m compileall -q apps/backend apps/frontend data_pipeline/scripts ml-models/scripts
+        run: python -m compileall -q apps/backend apps/frontend data_pipeline/scripts
 
       - name: Migrations apply and roll back
         env:

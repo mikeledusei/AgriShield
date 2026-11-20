@@ -1,4 +1,6 @@
-# Packages used only by data_pipeline/scripts and ml-models/scripts.
+# Packages used only by data_pipeline/scripts and the ml-models notebooks.
+# Install with: pip install -r apps/backend/requirements-research.txt -c constraints.txt
+# jupyter/ipykernel are needed to run the notebooks themselves.
 # Not installed into the API image: this keeps the container small and removes
 # modules the served application never imports.
 -r requirements.txt

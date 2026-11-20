@@ -25,24 +25,51 @@ Requires Python 3.11 or newer. From the repository root:
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r apps/backend/requirements.txt -r apps/frontend/requirements.txt \
   -r data_pipeline/requirements.txt -c constraints.txt
-
-cd apps/backend
-alembic upgrade head     # creates/updates every table (init_db.py is an alias)
-python seed_counties.py  # idempotent
-uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-In another terminal:
+### 1. Backend (terminal 1)
+
+```bash
+cd apps/backend
+alembic upgrade head     # creates/updates every table (init_db.py is an alias)
+python seed_counties.py  # idempotent; adds the 47 counties
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+
+No configuration is needed for local use: with `DATABASE_URL` unset the API uses a
+SQLite file at `apps/backend/agrishield.db`, and `PUBLIC_MODE` defaults to on. Check it is
+healthy before moving on:
+
+```bash
+curl http://127.0.0.1:8000/api/v1/health/ready
+# {"status":"ready", ..., "problems":[]}     <- 200 when ready, 503 with a problems list when not
+```
+
+`/health` is only liveness. `/health/ready` is the one that proves the model loaded and
+the migrations were applied.
+
+### 2. Frontend (terminal 2)
 
 ```bash
 source .venv/bin/activate
-export AGRISHIELD_API_URL=http://127.0.0.1:8000/api/v1
 cd apps/frontend
-streamlit run streamlit_app.py --server.address 0.0.0.0
+cp .env.example .env             # optional; the default already points at :8000
+streamlit run streamlit_app.py
 ```
+
+Open <http://localhost:8501>. `apps/frontend/.env` is read automatically (a real
+environment variable still takes precedence), so `AGRISHIELD_API_URL` can be set in the
+file instead of the shell:
+
+```bash
+AGRISHIELD_API_URL=http://127.0.0.1:8000/api/v1
+```
+
+The dashboard talks to the API **from the Streamlit server process**, not from your
+browser, so a Docker-hosted API must be reachable from the machine running Streamlit.
 
 The local API documentation is at `http://127.0.0.1:8000/docs` and Streamlit uses port 8501. `GET /api/v1/health` is a liveness probe; `GET /api/v1/health/ready` checks the model hash, a probe inference, and the database, and returns 503 when the deployment cannot score. See [the deployment runbook](docs/DEPLOYMENT.md) for release, rollback, retention and backup steps. The API URL is resolved by the **Streamlit server**, not the user's browser. See [frontend setup and input definitions](apps/frontend/README.md) for deployment and configuration. The Render blueprint deploys the backend; it does not deploy Streamlit. Build the API container from the repository root with `docker build -f apps/backend/Dockerfile .`.
 
@@ -50,12 +77,23 @@ The local API documentation is at `http://127.0.0.1:8000/docs` and Streamlit use
 
 The research pipeline uses already-harmonized local source tables; its research inputs are not live. The dashboard has a separate Open-Meteo current-weather layer. To explicitly join the local tables and impute missing values using the national mean for the same month, then run the retrospective comparison:
 
+The research workflow is the notebook sequence in `ml-models/notebooks/`, run in order:
+
+| Notebook | Produces |
+| --- | --- |
+| `00_data_loading.ipynb` | `ml_base_2015_2025.csv` — joins NDVI, Weather and Demographics |
+| `01_target_synthesis.ipynb` | `county_ndvi_stats.csv`, `master_train_2015_2023.csv`, `master_test_2024_2025.csv` |
+| `02_feature_engineering.ipynb` | `X/y_train`, `X/y_test`, `train_matrix`, `test_matrix`, `scaler.joblib` |
+| `03_model_training.ipynb` | four fitted models + `feature_columns.json` |
+| `04_model_evaluation.ipynb` | metrics and plots for the deployed champion |
+| `05_model_comparison.ipynb` | `model_comparison_2015_2025.csv`, the report, and synced backend artifacts |
+
+All six execute end to end from a clean clone. `05_model_comparison.ipynb` **copies its
+models into `apps/backend/ml_artifacts/`**, overwriting the served artifacts, so treat
+running it as a deployment action and review `git status` afterwards. The optional
+external download still uses a script:
+
 ```bash
-python data_pipeline/scripts/clean_data.py --impute-national-monthly \
-  --output ml-models/experiments/cleaned_panel.csv
-python ml-models/scripts/train.py --panel ml-models/experiments/cleaned_panel.csv \
-  --output ml-models/experiments/run-01
-python ml-models/scripts/evaluate.py
 # Optional, on a network that can reach data.4tu.nl:
 python data_pipeline/scripts/download_external.py
 ```
@@ -118,4 +156,4 @@ Saved research output: `data_pipeline/outputs/panel_2026_11_20/` contains the cl
 
 `data_pipeline/data/external/knbs_candidate/` contains a third-party mirror of a historical county maize workbook and a quality-flagged table; the primary file and redistribution rights have not been verified. The Reported maize yields dashboard page displays annual historical yield, not live crop-loss risk. `data_pipeline/outputs/maize_2026_11_20/` contains a descriptive chart and analysis.
 
-`ml-models/scripts/maize_outcome_experiment.py` trains four models against reported maize yield and evaluates 2020 after 2018 selection. The results and limitations are saved under `ml-models/research_runs/maize_2026_11_20/`. The selected research model was slightly worse on 2020 MAE than the prior-county-yield baseline and uses full-year weather; it has **not** been deployed as a live crop-risk model. No genuine forage outcome model or live agricultural risk map has been validated.
+The maize outcome experiment trains four models against reported maize yield and evaluates 2020 after 2018 selection. It is archived under `ml-models/legacy_reference/` (it was previously a script in `ml-models/scripts/`, which has been removed in favour of the notebooks). Its results and limitations are saved under `ml-models/research_runs/maize_2026_11_20/`. The selected research model was slightly worse on 2020 MAE than the prior-county-yield baseline and uses full-year weather; it has **not** been deployed as a live crop-risk model. No genuine forage outcome model or live agricultural risk map has been validated.

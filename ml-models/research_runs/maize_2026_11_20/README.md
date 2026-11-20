@@ -6,4 +6,4 @@ The selected Ridge model's 2020 MAE was 0.394 tonnes/ha for 46 counties; a simpl
 
 `metrics.json` contains all metrics and source hashes; `model_panel.csv` and `predictions.csv` provide the evaluated inputs and row-level outputs. Four fitted artifacts are research-only. No forage outcome model has been trained from these maize records.
 
-Reproduce into a new empty directory: `python ml-models/scripts/maize_outcome_experiment.py --output <new-directory>`.
+Reproduce from the archived copy in `ml-models/legacy_reference/maize_outcome_experiment.py.txt` (it has no notebook equivalent); copy it to a `.py` file and pass `--output <new-directory>`.

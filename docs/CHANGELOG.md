@@ -167,8 +167,9 @@ had was "the process is up" — which is true of a process that cannot score.
   | `ml-models/requirements.txt` | `jupyter`, `ipykernel`, `python-dotenv` | Same |
 
   Verified afterwards: every third-party import in `apps/`, `data_pipeline/scripts/` and
-  `ml-models/scripts/` is declared in a requirements file, and `clean_data.py`,
-  `train.py` and `prepare_maize_outcomes.py` still start.
+  the `ml-models` research scripts is declared in a requirements file, and
+  `clean_data.py` and `prepare_maize_outcomes.py` still start. (The `ml-models/scripts/`
+  copies of `train.py` were later removed in favour of the notebooks; see the entry below.)
 - **`constraints.txt`** pins the resolved set. All 26 pins were checked against PyPI and
   exist. `scikit-learn==1.9.0` is exact and commented because the artifact was fitted with it.
 - **CI** (`.github/workflows/ci.yml`): Python 3.12, install from constraints, `ruff check`,
@@ -234,6 +235,47 @@ clean).
 - **`docs/DATA_MODEL_CARD.md`** — added the accepted-input-distribution section.
 - **`apps/backend/.env.example`, `apps/frontend/.env.example`** — rewritten. The old files
   listed variables the code never read and omitted several it requires.
+
+## Notebook-only research workflow
+
+`ml-models/scripts/` has been **removed** (four files: `train.py`, `evaluate.py`,
+`predict.py`, `maize_outcome_experiment.py`). The research workflow is now the notebook
+sequence in `ml-models/notebooks/`.
+
+- **`00_data_loading.ipynb` no longer needs files that do not exist.** It read
+  `master_cleaned_2015_2025.csv`, plus `Crop_Production_WIDE/LONG_FINAL.csv` in its
+  inventory cell. None of the three is tracked in Git or produced by any committed
+  script, so the notebook could not run from a clean clone. It now joins
+  `NDVI_FINAL.csv` + `Weather_FINAL.csv` + `Demographic_Crop_Activity_FINAL.csv`
+  directly and asserts the row count and grain after joining. The rebuild reproduces
+  `ml_base_2015_2025.csv` exactly: **6,204 rows × 15 columns**, 47 counties, 132 months
+  each, 0 nulls — confirmed by executing all six notebooks in order in a fresh clone.
+- **The maize yield experiment has no notebook equivalent.** The notebooks model the
+  NDVI drought-risk target only. The script is archived at
+  `ml-models/legacy_reference/maize_outcome_experiment.py.txt` so the results under
+  `ml-models/research_runs/maize_2026_11_20/` stay reproducible.
+- **Two tests removed** with the scripts they exercised:
+  `test_end_to_end_experiment_does_not_promote_model` and
+  `test_maize_experiment_holdout_and_baseline_are_separate`. The first asserted that a
+  research run never promotes itself to the deployed champion; that guarantee now rests
+  on notebook discipline instead, because `05_model_comparison.ipynb` **does** copy its
+  models into `apps/backend/ml_artifacts/`.
+- **Pointers updated** so nothing dangles: `ci.yml` `compileall` target, the
+  `pyproject.toml` per-file ruff ignore, `README.md` (research section rewritten as a
+  notebook table), `docs/DATA_MODEL_CARD.md`, both requirements headers, and
+  `ml-models/research_runs/maize_2026_11_20/README.md`.
+
+## Local development
+
+- **`apps/frontend/.env` is now read** (`shared/api_client.py`). The backend reads its
+  `.env` through pydantic-settings, but the dashboard is a plain script and only read
+  real environment variables, so a `.env` beside `streamlit_app.py` was silently ignored
+  and the app fell back to the localhost default while the file looked authoritative. A
+  real environment variable still takes precedence, so containers and Streamlit are
+  unaffected.
+- **README quickstart rewritten** into two numbered terminals with the readiness check
+  inline. `--reload` added for backend development, the optional `.env` copy documented,
+  and the Windows activate path noted.
 
 ## Known limitations
 

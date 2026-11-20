@@ -2,6 +2,7 @@
 import csv
 import io
 import math
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -656,3 +657,41 @@ def test_county_map_places_labels_without_overlap():
 
     filled = {trace.marker.color for trace in markers}
     assert filled <= set(BAND_COLORS.values()) | {None}
+
+
+def test_frontend_dotenv_is_read_but_real_env_wins(tmp_path, monkeypatch):
+    """apps/frontend/.env must be honoured; a real environment variable must still win.
+
+    Without this the dashboard silently fell back to the localhost default while a .env
+    file sat next to streamlit_app.py looking authoritative.
+    """
+    from shared import api_client
+
+    env_file = tmp_path / "frontend.env"
+    env_file.write_text(
+        "# comment\nAGRISHIELD_API_URL=http://127.0.0.1:8101/api/v1\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(api_client, "ENV_FILE", env_file)
+    monkeypatch.delenv("AGRISHIELD_API_URL", raising=False)
+    monkeypatch.delenv("BACKEND_URL", raising=False)
+
+    api_client._load_env_file()
+    assert os.environ["AGRISHIELD_API_URL"] == "http://127.0.0.1:8101/api/v1"
+    assert api_client.get_client().base_url == "http://127.0.0.1:8101/api/v1"
+
+    # An explicitly exported variable is not overwritten by the file.
+    monkeypatch.setenv("AGRISHIELD_API_URL", "http://127.0.0.1:9999/api/v1")
+    api_client._load_env_file()
+    assert os.environ["AGRISHIELD_API_URL"] == "http://127.0.0.1:9999/api/v1"
+
+
+def test_frontend_dotenv_absent_is_not_an_error(tmp_path, monkeypatch):
+    """A missing .env must not raise; the documented fallback still applies."""
+    from shared import api_client
+
+    monkeypatch.setattr(api_client, "ENV_FILE", tmp_path / "does-not-exist.env")
+    monkeypatch.delenv("AGRISHIELD_API_URL", raising=False)
+    monkeypatch.delenv("BACKEND_URL", raising=False)
+    api_client._load_env_file()  # must not raise
+    assert api_client.get_client().base_url == "http://127.0.0.1:8000/api/v1"

@@ -1,4 +1,6 @@
-# Packages for the reproducible scripts in ml-models/scripts.
+# Packages for the ml-models notebooks (superseded by
+# apps/backend/requirements-research.txt, which is constrained by constraints.txt
+# and also includes openpyxl; kept for reference).
 pandas>=2.2.0
 numpy>=1.26.0
 

@@ -34,7 +34,6 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S", "B", "E402"]          # sys.path bootstrapping happens before imports
 "apps/backend/migrations/*" = ["B", "E", "W"]
-"ml-models/scripts/*" = ["E402"]        # project root is added to sys.path before imports
 "data_pipeline/scripts/download_external.py" = ["S310"]  # https scheme is enforced inline
 
 [tool.ruff.lint.flake8-bugbear]
