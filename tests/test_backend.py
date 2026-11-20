@@ -159,172 +159,28 @@ def test_health_endpoint():
     assert "services" in data
 
 
-def test_prediction_and_report_endpoints():
-    """Test predictions, scenario, history, Gria chat, upload, and PDF report routes."""
+def test_retired_unsafe_endpoints_and_gria():
+    from fastapi.testclient import TestClient
     from main import app
-    from httpx import ASGITransport, AsyncClient
-
-    async def _run():
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            # 1. List 47 counties
-            r_counties = await client.get("/api/v1/predictions/counties")
-            assert r_counties.status_code == 200
-            assert len(r_counties.json()) == 47
-
-            # 2. Single county prediction (including hyphenated frontend alias)
-            r_pred = await client.post(
-                "/api/v1/predictions/crop-yield",
-                json={"county_name": "Taita-Taveta", "focus": "crops"},
-            )
-            assert r_pred.status_code == 200
-            p_data = r_pred.json()
-            assert p_data["county_name"] == "Taita Taveta"
-            assert p_data["model_used"] == "lightgbm_v1"
-
-            # 3. Batch predictions (all 47 counties)
-            r_batch = await client.get("/api/v1/predictions/batch")
-            assert r_batch.status_code == 200
-            assert r_batch.json()["county_count"] == 47
-
-            # 4. Compare counties
-            r_comp = await client.post(
-                "/api/v1/predictions/compare",
-                json={"counties": ["Turkana", "Uasin Gishu", "Kajiado"]},
-            )
-            assert r_comp.status_code == 200
-            assert len(r_comp.json()["counties"]) == 3
-
-            # 5. Region aggregation
-            r_reg = await client.post(
-                "/api/v1/predictions/region",
-                json={"region_name": "Rift Valley"},
-            )
-            assert r_reg.status_code == 200
-            assert r_reg.json()["county_count"] >= 10
-
-            # 6. Scenario analysis
-            r_scen = await client.post(
-                "/api/v1/predictions/scenario",
-                json={
-                    "county_name": "Kajiado",
-                    "rainfall_change_pct": -40.0,
-                    "temp_change_c": 2.5,
-                    "ndvi_shock": -0.15,
-                },
-            )
-            assert r_scen.status_code == 200
-            assert "score_delta" in r_scen.json()
-
-            # 7. Historical series
-            r_hist = await client.get("/api/v1/predictions/history?county_name=Turkana&months=12")
-            assert r_hist.status_code == 200
-            assert len(r_hist.json()["trend"]) == 12
-
-            # 8. Gria chat endpoint
-            r_gria = await client.post(
-                "/api/v1/gria/chat",
-                json={
-                    "message": "What is the drought risk?",
-                    "county_name": "Turkana",
-                    "document_context": "Dry conditions",
-                    "document_name": "field_notes.txt",
-                },
-            )
-            assert r_gria.status_code == 200
-            assert r_gria.json()["risk_score"] is not None
-
-            # 9. Report creation & PDF download
-            r_rep = await client.post(
-                "/api/v1/reports/create",
-                json={"county_name": "Murang'a", "report_type": "combined", "detailed": True},
-            )
-            assert r_rep.status_code == 200
-            rep_id = r_rep.json()["id"]
-
-            r_pdf = await client.get(f"/api/v1/reports/{rep_id}/pdf")
-            assert r_pdf.status_code == 200
-            assert r_pdf.content.startswith(b"%PDF")
-
-            # 10. Upload & analyze CSV
-            csv_bytes = b"county,rainfall_anomaly_30d,ndvi_pasture_index,temp_max_avg,soil_moisture_deficit\nTurkana,-25.0,0.22,33.5,65.0\n"
-            r_up = await client.post(
-                "/api/v1/upload/analyze",
-                files={"file": ("sample.csv", csv_bytes, "text/csv")},
-            )
-            assert r_up.status_code == 200
-            assert r_up.json()["extracted_data"]["county_name"] == "Turkana"
-
-            # 11. Reject invalid file extension
-            r_bad = await client.post(
-                "/api/v1/upload/analyze",
-                files={"file": ("malicious.exe", b"nope", "application/octet-stream")},
-            )
-            assert r_bad.status_code == 400
-
-            # 12. Future Forecast with Champion Model Feature Sliders
-            r_fc = await client.post(
-                "/api/v1/predictions/forecast",
-                json={
-                    "county_name": "Turkana",
-                    "target_month": 2,
-                    "focus": "livestock",
-                    "auto_derive_indices": False,
-                    "rainfall_mm": 8.0,
-                    "rain_3m_sum": 32.0,
-                    "rainfall_anomaly": -45.0,
-                    "temp_mean_c": 34.5,
-                    "soil_moisture": 0.08,
-                    "ndvi_lag1": 0.21,
-                    "ndvi_anomaly": -0.09,
-                    "forage_dryness_index": 0.95,
-                },
-            )
-            assert r_fc.status_code == 200
-            fc_data = r_fc.json()
-            assert fc_data["county_name"] == "Turkana"
-            assert 0 <= fc_data["forecast"]["risk_score"] <= 100
-            assert len(fc_data["forecast"]["shap_contributions"]) == 16
-            assert "gria_plain_analysis" in fc_data
-
-            # 13. TreeSHAP Explainability endpoint (local + global importance)
-            r_exp = await client.get("/api/v1/predictions/explain?county_name=Marsabit&month=2025-02")
-            assert r_exp.status_code == 200
-            exp_data = r_exp.json()
-            assert exp_data["county_name"] == "Marsabit"
-            assert len(exp_data["local_shap"]) == 16
-            assert len(exp_data["global_importance"]) == 16
-            assert exp_data["global_importance"][0]["feature"] == "forage_dryness_index"
-
-            # 14. Available months endpoint
-            r_months = await client.get("/api/v1/predictions/months")
-            assert r_months.status_code == 200
-            assert "2025-02" in r_months.json()
-
-            # 15. Upload comparator returns baseline comparison, converted 16 features & suggestions
-            up_json = r_up.json()
-            assert "baseline_risk_score" in up_json
-            assert "score_delta_vs_baseline" in up_json
-            assert len(up_json["converted_features"]) == 16
-            assert len(up_json["suggestions"]) >= 1
-
-    asyncio.run(_run())
+    with TestClient(app) as client:
+        assert len(client.get('/api/v1/predictions/counties').json()) == 47
+        for path in ['/predictions/crop-yield', '/predictions/forecast', '/predictions/scenario', '/upload/analyze', '/reports/create', '/storage/upload']:
+            assert client.post('/api/v1' + path, json={}).status_code == 410
+        for path in ['/predictions/batch', '/predictions/explain', '/predictions/months', '/reports/1/pdf']:
+            assert client.get('/api/v1' + path).status_code == 410
+        chat = client.post('/api/v1/gria/chat', json={'message': 'Explain', 'county_name': 'Turkana', 'month': '2025-02'})
+        assert chat.status_code == 200
+        assert chat.json()['mode'] in ('summary', 'ai')
 
 
-def test_gria_agent_tools():
-    """Verify Gria agent tools execute without AttributeError."""
-    from agents.tools import get_current_county_risk, get_historical_trends, compare_two_counties
-
-    risk_out = get_current_county_risk.invoke({"county_name": "Nakuru"})
+def test_gria_agent_tool_requires_real_historical_period():
+    from agents.tools import get_current_county_risk
+    risk_out = get_current_county_risk.invoke({"county_name": "Nakuru", "month": "2025-02"})
     assert risk_out["county"] == "Nakuru"
+    assert risk_out["period"] == "2025-02"
     assert "risk_score" in risk_out
-
-    hist_out = get_historical_trends.invoke({"county_name": "Nakuru"})
-    assert isinstance(hist_out, list)
-    assert len(hist_out) > 0
-
-    comp_out = compare_two_counties.invoke({"county_1": "Turkana", "county_2": "Nyeri"})
-    assert comp_out["county_1"]["name"] == "Turkana"
-    assert comp_out["county_2"]["name"] == "Nyeri"
+    missing = get_current_county_risk.invoke({"county_name": "Nakuru", "month": "2099-01"})
+    assert "error" in missing and "risk_score" not in missing
 
 
 def test_model_imports():

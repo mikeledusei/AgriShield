@@ -19,6 +19,8 @@ if settings.DATABASE_URL:
             connect_args={"check_same_thread": False},
         )
     else:
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
         if "sslmode" not in database_url and (
             database_url.startswith("postgres://") or database_url.startswith("postgresql://")
         ):

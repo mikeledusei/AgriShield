@@ -1,6 +1,6 @@
 """Pydantic models defining the API data contract (non-prediction schemas)."""
 from typing import Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from schemas.predictions import ShapFeatureContribution
 
 
@@ -15,15 +15,16 @@ class ModelInput(BaseModel):
 
 # ---------- Gria ----------
 class GriaChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=4000)
     county_name: Optional[str] = None
     month: Optional[str] = None
-    document_context: Optional[str] = None
-    document_name: Optional[str] = None
+    document_context: Optional[str] = Field(default=None, max_length=4000)
+    document_name: Optional[str] = Field(default=None, max_length=255)
 
 
 class GriaChatResponse(BaseModel):
     reply: str
+    mode: str = "summary"
     risk_score: Optional[float] = None
     risk_level: Optional[str] = None
     main_driver: Optional[str] = None

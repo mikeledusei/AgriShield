@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     API_KEY: str = "dev-api-key-change-in-production"
     PUBLIC_MODE: bool = True
 
-    DATABASE_URL: str = "sqlite:///./agrishield.db"
+    # Resolve local storage independently of the process working directory.
+    DATABASE_URL: str = f"sqlite:///{BACKEND_DIR / 'agrishield.db'}"
     DB_ECHO: bool = False
 
     SUPABASE_URL: str = ""

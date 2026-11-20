@@ -1,7 +1,9 @@
+> **Data-quality note:** The harmonized weather source has 132 missing soil-moisture observations. The later modeling panel fills them using the national mean for the same month. See [data/model card](../DATA_MODEL_CARD.md).
+
 # AgriShield Exploratory Data Analysis (EDA) Report (2015–2025)
 
 **Project:** AgriShield — Early Warning System for Crop Yield & Livestock Forage Risk in Kenya  
-**Dataset Scope:** `6,204` monthly records across all **`47` Kenyan counties** (`2015-01` to `2025-12`, `0` missing values)
+**Dataset Scope:** `6,204` monthly records across all **`47` Kenyan counties** (`2015-01` to `2025-12`; 132 source soil-moisture values missing before imputation)
 
 ---
 

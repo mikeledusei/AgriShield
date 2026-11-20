@@ -88,3 +88,21 @@ class Upload(Base):
     risk_score = Column(Float)
     risk_level = Column(String)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class AssessmentReportSnapshot(Base):
+    """Immutable prediction snapshot, protected by an unguessable capability."""
+    __tablename__ = "assessment_report_snapshots"
+    id = Column(String(36), primary_key=True)
+    access_hash = Column(String(64), nullable=False)
+    snapshot_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+
+
+class HistoryRecord(Base):
+    """Private saved assessment, accessible only with a user-held history key."""
+    __tablename__ = 'assessment_history'
+    id = Column(String(36), primary_key=True)
+    history_key_hash = Column(String(64), nullable=False, index=True)
+    snapshot_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False, index=True)

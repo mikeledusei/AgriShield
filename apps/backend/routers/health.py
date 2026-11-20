@@ -1,37 +1,38 @@
-"""Health check endpoint."""
+"""Health: distinguish reachable dependencies from merely configured ones."""
 from fastapi import APIRouter
+from sqlalchemy import text
 
 from core.config import settings
-from core.database import is_configured
+from database.connection import engine as db_engine
 from core.supabase_client import is_supabase_configured
 from schemas.pydantic_models import HealthResponse
 from services.prediction_service import get_engine
 
-router = APIRouter(tags=["Health"])
+router = APIRouter(tags=['Health'])
 
 
-@router.get("/health", response_model=HealthResponse)
-async def health_check():
-    engine = get_engine()
-    model_loaded = engine.model is not None
-    gria_ready = bool(
-        settings.NVIDIA_API_KEY.strip()
-        and settings.NVIDIA_API_KEY != "your-nvidia-api-key"
-    )
-    db_ready = is_configured()
+@router.get('/health', response_model=HealthResponse)
+def health_check():
+    model = get_engine()
+    db_ready = False
+    if db_engine is not None:
+        try:
+            with db_engine.connect() as conn:
+                conn.execute(text('SELECT 1'))
+            db_ready = True
+        except Exception:
+            pass
+    from agents.gria_agent import agent_executor
+    gria_ready = agent_executor is not None
+    model_ready = model.model is not None and bool(model.feature_cols)
     services = {
-        "database": "connected" if db_ready else "not configured",
-        "ml_engine": engine.model_name if model_loaded else "rule_based",
-        "supabase": "connected" if is_supabase_configured() else "not configured",
-        "redis": "connected" if settings.REDIS_URL else "offline (optional)",
-        "gria_ai": "configured" if gria_ready else "fallback mode",
+        'database': 'connected' if db_ready else 'unreachable',
+        'ml_engine': model.model_name if model_ready else 'unavailable',
+        'historical_data': 'available' if model.county_history else 'unavailable',
+        'supabase': 'configured (not checked)' if is_supabase_configured() else 'not configured',
+        'redis': 'configured (not checked)' if settings.REDIS_URL else 'not configured',
+        'gria_ai': 'configured (not checked)' if gria_ready else 'summary mode',
     }
-    return HealthResponse(
-        status="healthy",
-        services=services,
-        version="1.0.0",
-        model_loaded=model_loaded,
-        model_name=engine.model_name,
-        gria_available=gria_ready,
-        database_connected=db_ready,
-    )
+    return HealthResponse(status='healthy' if db_ready and model_ready else 'degraded', services=services,
+                          model_loaded=model_ready, model_name=model.model_name if model_ready else 'unavailable',
+                          gria_available=gria_ready, database_connected=db_ready)
