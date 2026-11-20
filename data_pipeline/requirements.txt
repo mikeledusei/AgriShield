@@ -1,9 +1,14 @@
-# Packages for the reproducible scripts in data_pipeline/scripts.
-# The GeoJSON is read with the standard `json` module, so no geospatial stack is
-# needed; notebooks in data_pipeline/notebooks have their own extra needs and are
-# documented in docs/RELEASE_NOTES.md.
+# Every dependency of data_pipeline in one file.
+#
+#   python -m venv data_pipeline/venv && source data_pipeline/venv/bin/activate
+#   pip install -r data_pipeline/requirements.txt -c constraints.txt
+#
+# The GeoJSON is read with the standard `json` module, so no geospatial stack is needed.
+
 pandas>=2.2.0
 numpy>=1.26.0,<3.0
+joblib>=1.4.0
+scikit-learn>=1.4.0
 
 # Excel source tables (data_pipeline/data/external/knbs_candidate/*.xlsx)
 openpyxl>=3.1.0
@@ -11,6 +16,10 @@ openpyxl>=3.1.0
 # External source downloads (NASA POWER, FAOSTAT, HDX mirrors)
 requests>=2.32.0
 
-# Figures and exploratory analysis used by the notebooks
+# Figures and exploratory analysis used by the scripts and notebooks
 matplotlib>=3.9.0,<4.0
 seaborn>=0.13.0
+
+# Notebooks in data_pipeline/notebooks/
+jupyter>=1.0.0
+ipykernel>=6.29.0

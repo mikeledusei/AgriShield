@@ -1,3 +1,9 @@
+# Every dependency of apps/frontend in one file.
+#
+#   python -m venv apps/frontend/venv && source apps/frontend/venv/bin/activate
+#   pip install -r apps/frontend/requirements.txt -c constraints.txt
+#
+# The dashboard is HTTP-only: it never loads model artifacts, so it needs no ML stack.
 streamlit>=1.35.0
 requests>=2.32.0
 pandas>=2.2.0

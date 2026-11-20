@@ -23,16 +23,32 @@ The Streamlit frontend calls the FastAPI backend for all scoring and application
 
 Requires Python 3.11 or newer. From the repository root:
 
+Each component has **one** `requirements.txt` and its **own** virtual environment.
+There is no environment at the repository root; there is no second requirements file
+per component.
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r apps/backend/requirements.txt -r apps/frontend/requirements.txt \
-  -r data_pipeline/requirements.txt -c constraints.txt
+# Run from the repository root. Windows: use <dir>\venv\Scripts\activate
+for d in apps/backend apps/frontend data_pipeline ml-models; do
+  python -m venv "$d/venv"
+  "$d/venv/bin/pip" install -r "$d/requirements.txt" -c constraints.txt
+done
 ```
+
+| Component | Environment | Contains |
+| --- | --- | --- |
+| `apps/backend` | `apps/backend/venv` | API, tests and linting, plus the research stack |
+| `apps/frontend` | `apps/frontend/venv` | Streamlit dashboard (HTTP-only, no ML stack) |
+| `data_pipeline` | `data_pipeline/venv` | cleaning scripts and EDA notebooks |
+| `ml-models` | `ml-models/venv` | research notebooks: sklearn, xgboost, lightgbm, shap |
+
+You do not need all four to work on one part: the backend venv alone can run the API
+and the whole test suite, because that is where the tests live.
 
 ### 1. Backend (terminal 1)
 
 ```bash
+source apps/backend/venv/bin/activate
 cd apps/backend
 alembic upgrade head     # creates/updates every table (init_db.py is an alias)
 python seed_counties.py  # idempotent; adds the 47 counties
@@ -54,7 +70,7 @@ the migrations were applied.
 ### 2. Frontend (terminal 2)
 
 ```bash
-source .venv/bin/activate
+source apps/frontend/venv/bin/activate
 cd apps/frontend
 cp .env.example .env             # optional; the default already points at :8000
 streamlit run streamlit_app.py
@@ -105,7 +121,7 @@ Read the [data and model card](docs/DATA_MODEL_CARD.md) before interpreting resu
 ## Tests and linting
 
 ```bash
-pip install -r apps/backend/requirements-dev.txt -r apps/frontend/requirements.txt -c constraints.txt
+source apps/backend/venv/bin/activate   # the venv with tests, lint and research deps
 ruff check .
 python -m pytest tests -q
 ```

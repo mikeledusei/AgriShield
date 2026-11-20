@@ -153,10 +153,10 @@ had was "the process is up" — which is true of a process that cannot score.
 
 ## Dependencies, CI and containers
 
-- **Requirements split by purpose**: `apps/backend/requirements.txt` (runtime),
-  `apps/backend/requirements-research.txt` (research scripts), and
-  `apps/backend/requirements-dev.txt` (test and lint tooling). The API image installs only
-  the runtime set.
+- **One `requirements.txt` per component** — see "Dependency and environment layout"
+  below. (Historically the backend had three: runtime, research and dev. The API image
+  still installs only the runtime subset, now filtered from the single file by the
+  Dockerfile.)
 - **Dependencies nothing imported removed**:
 
   | File | Removed | Evidence |
@@ -235,6 +235,42 @@ clean).
 - **`docs/DATA_MODEL_CARD.md`** — added the accepted-input-distribution section.
 - **`apps/backend/.env.example`, `apps/frontend/.env.example`** — rewritten. The old files
   listed variables the code never read and omitted several it requires.
+
+## Dependency and environment layout
+
+One `requirements.txt` and one virtual environment per component. There is no environment
+at the repository root and no second requirements file anywhere.
+
+| Component | File | Environment |
+| --- | --- | --- |
+| `apps/backend` | `requirements.txt` | `apps/backend/venv` |
+| `apps/frontend` | `requirements.txt` | `apps/frontend/venv` |
+| `data_pipeline` | `requirements.txt` | `data_pipeline/venv` |
+| `ml-models` | `requirements.txt` | `ml-models/venv` |
+
+- **Merged and deleted** `apps/backend/requirements-dev.txt` and
+  `apps/backend/requirements-research.txt`. Their contents are now sections of
+  `apps/backend/requirements.txt`, so a single venv there can serve the API, run the
+  test suite and retrain models. `data_pipeline/requirements.txt` gained `joblib`,
+  `scikit-learn`, `jupyter` and `ipykernel`, which `ml-models` needs too; `ml-models`
+  gained `jupyter` and `ipykernel`. Every file is self-sufficient: the notebooks address
+  `data_pipeline/data/processed/` by path and never import the `data_pipeline` package,
+  so per-component venvs need no cross-installs. The one exception is `data_pipeline/scripts/experiment.py`,
+  which is imported from the repository root; it resolves because nothing else is needed
+  on `sys.path` beyond the repo itself.
+- **The API image stays lean** without a second file: `apps/backend/Dockerfile` filters
+  the research and test blocks out of `requirements.txt` with `awk` before installing, so
+  `jupyter`, `xgboost`, `seaborn` and `pytest` never enter the image.
+- **CI installs all four** into one interpreter, because the root `tests/` import the
+  backend, the dashboard, `data_pipeline` and the research libraries. Locally they are
+  separate venvs.
+- **`.env.example` files completed.** `apps/backend/.env.example` now documents all 27
+  settings including `API_KEY`, the real `SECRET_KEY`/`API_KEY` defaults, and
+  `MODEL_PATH`, and separates the "required in production" group that
+  `validate_production_safety` actually enforces. `apps/frontend/.env.example` documents
+  `BACKEND_URL` (a supported alias) and states that the two
+  `AGRISHIELD_ALLOWED_*` variables are read by the Dockerfile's `streamlit` flags, not by
+  the application code.
 
 ## Notebook-only research workflow
 
