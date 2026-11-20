@@ -33,10 +33,16 @@ credentials.json
 # ============================================================
 # 2. DATA FILES (CRITICAL - Large files, never commit)
 # ============================================================
-# Data stays out of Git. The files the running application needs are listed in the
-# explicit allowlist below; adding a new dataset means adding one line here, which
-# makes the size and licence of every committed file a deliberate decision.
-data_pipeline/data/
+# Data stays out of Git. The files the running application and the tests need are listed
+# in the explicit allowlist below; adding a dataset means adding one line here, which
+# keeps the size and licence of every committed file a deliberate decision.
+#
+# `**` also matches the directories themselves, and git will not descend into an excluded
+# directory to look for a re-included file. The directories are therefore re-included
+# first, and the file allowlist below decides what actually gets tracked.
+data_pipeline/data/**
+!data_pipeline/data/**/
+!data_pipeline/data/**/
 *.tsv
 *.parquet
 *.feather
@@ -46,9 +52,10 @@ data_pipeline/data/
 *.sqlite
 *.db
 
-# --- Tracked inputs (small, required at runtime) ---
+# --- Tracked inputs (small, needed at runtime or read by the tests) ---
 !data_pipeline/data/kenya_county_crosswalk.csv
 !data_pipeline/data/external/knbs_candidate/maize_outcomes_clean.csv
+!data_pipeline/data/external/knbs_candidate/maize_2012_2020_mirror.xlsx
 !data_pipeline/data/external/knbs_candidate/README.md
 !data_pipeline/data/external/SOURCES.md
 !data_pipeline/data/processed/train_matrix.csv
@@ -56,7 +63,12 @@ data_pipeline/data/
 !data_pipeline/data/processed/X_test.csv
 !data_pipeline/data/processed/y_test.csv
 !data_pipeline/data/processed/county_ndvi_stats.csv
-!data_pipeline/data/kenya_counties.geojson
+!data_pipeline/data/processed/NDVI_FINAL.csv
+!data_pipeline/data/processed/Weather_FINAL.csv
+!data_pipeline/data/processed/Demographic_Crop_Activity_FINAL.csv
+!data_pipeline/data/processed/ml_base_2015_2025.csv
+# Deliberately not tracked: byte-identical duplicate of apps/frontend/assets/kenya_counties.geojson
+# and read by no script. The frontend copy is the tracked one.
 
 # Runtime model artifacts: the champion bundle must ship with the API.
 !apps/backend/ml_artifacts/**
@@ -231,13 +243,16 @@ __pycache__/
 # Reproducible research runs; promote artifacts only after review.
 ml-models/experiments/
 ml-models/research_runs/
-data_pipeline/outputs/
+data_pipeline/outputs/**
+!data_pipeline/outputs/panel_2026_11_20/
+!data_pipeline/outputs/panel_2026_11_20/cleaned_panel.csv
 
 # Large binary deliverables stay out of Git (the 12.5 MB slide deck is kept on disk
 # and distributed separately). Small .md/.csv/.json deliverables stay tracked above.
+# *.xlsx is already ignored in section 2; repeating it here would re-ignore the
+# allowlisted maize workbook, because the last matching pattern wins.
 docs/presentation/*.pptx
 *.pptx
-*.xlsx
 
 # Research model binaries are release assets, not tracked files. The champion artifact
 # and its scaler are the exception: the API loads them at runtime and the image copies
