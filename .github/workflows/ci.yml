@@ -42,7 +42,7 @@ jobs:
         run: ruff check .
 
       - name: Compile Python sources
-        run: python -m compileall -q apps/backend apps/frontend data_pipeline/scripts
+        run: python -m compileall -q apps/backend apps/frontend data_pipeline
 
       - name: Migrations apply and roll back
         env:

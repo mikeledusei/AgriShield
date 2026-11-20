@@ -272,6 +272,39 @@ at the repository root and no second requirements file anywhere.
   `AGRISHIELD_ALLOWED_*` variables are read by the Dockerfile's `streamlit` flags, not by
   the application code.
 
+## Data pipeline is notebook-only, with data acquisition and documented EDA
+
+- **`data_pipeline/scripts/` removed** (10 modules). The pipeline is now four notebooks in
+  `data_pipeline/notebooks/`. Logic that only existed in scripts was ported, not dropped:
+  the panel builder and its validation from `clean_data.py`/`experiment.py` now live in
+  `01_data_cleaning.ipynb` as explicit cells, and the archived originals remain readable in
+  `data_pipeline/legacy_reference/`.
+- **`00a_raw_data_acquisition.ipynb` is new.** It downloads every raw source into
+  `data/raw/`, verifies it, and writes `MANIFEST.json` with sizes and SHA-256 hashes:
+  NDVI and CHIRPS from HDX, monthly temperature / rainfall / soil wetness / runoff per
+  county from the NASA POWER point API (no key required), FAOSTAT bulk crops, and the
+  2019 census household table. The last two print manual instructions when they cannot be
+  fetched automatically. County centroids are derived from the tracked GeoJSON rather than
+  hard-coded, and reconciled against the crosswalk with an assertion — the GeoJSON spells
+  three counties with hyphens (`Elgeyo-Marakwet`) while the crosswalk and every processed
+  table use spaces, so a silent mismatch would have quietly produced a 44-county pipeline.
+- **`02_eda.ipynb` rewritten** to produce seven charts, each with its own `.md` explanation
+  and a combined `CHART_EXPLANATIONS.md` plus `figures.json`. Every chart is saved through a
+  single helper that requires the explanation text, so a figure cannot be written without
+  one. The explanations state the reading, the modelling consequence, and the limit.
+- **`tests/test_pipeline.py` rewritten.** It previously imported the scripts. It now asserts
+  against the notebook files and the committed outputs: the panel is 6,204 rows with 132
+  months per county and no gaps, imputation is flagged (132 soil-moisture cells), the ML
+  base table satisfies the champion's column contract, every EDA figure has an explanation
+  of at least 200 characters that references its own file, and only the acquisition
+  notebook makes network calls. **Coverage is genuinely lower than before** — the old suite
+  unit-tested `load_panel()` and `build_experiment()` directly; a regression in that logic
+  now surfaces as a failed notebook run rather than a red test.
+- **Consequence to be explicit about:** the tests that verified `download_external.py`'s
+  MD5 checking and `save_eda.py`'s no-overwrite behaviour were removed with those scripts.
+  The acquisition notebook verifies hashes, but that verification is now asserted only by
+  reading the notebook, not by executing it.
+
 ## Notebook-only research workflow
 
 `ml-models/scripts/` has been **removed** (four files: `train.py`, `evaluate.py`,

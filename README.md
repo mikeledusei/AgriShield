@@ -89,6 +89,41 @@ browser, so a Docker-hosted API must be reachable from the machine running Strea
 
 The local API documentation is at `http://127.0.0.1:8000/docs` and Streamlit uses port 8501. `GET /api/v1/health` is a liveness probe; `GET /api/v1/health/ready` checks the model hash, a probe inference, and the database, and returns 503 when the deployment cannot score. See [the deployment runbook](docs/DEPLOYMENT.md) for release, rollback, retention and backup steps. The API URL is resolved by the **Streamlit server**, not the user's browser. See [frontend setup and input definitions](apps/frontend/README.md) for deployment and configuration. The Render blueprint deploys the backend; it does not deploy Streamlit. Build the API container from the repository root with `docker build -f apps/backend/Dockerfile .`.
 
+## Data pipeline
+
+`data_pipeline/` is notebook-only; there are no scripts. Run the notebooks in order:
+
+| Notebook | Does | Needs network |
+| --- | --- | --- |
+| `00a_raw_data_acquisition.ipynb` | Downloads every raw source into `data/raw/`, verifies and hashes it, writes `MANIFEST.json` | **yes, first time only** |
+| `00_data_ingest.ipynb` | Loads and inspects the raw files, checks all 47 counties are present | no |
+| `01_data_cleaning.ipynb` | Cleans each source, joins the panel, validates it, writes `data/processed/*_FINAL.csv` and `master_cleaned_2015_2025.csv` | no |
+| `02_eda.ipynb` | Produces seven charts in `outputs/eda_<date>/figures/` with a `.md` explanation for each, plus `CHART_EXPLANATIONS.md` | no |
+
+### Getting the raw data
+
+Only two of the six raw sources need any manual work; the rest are fetched with no API key:
+
+```bash
+source data_pipeline/venv/bin/activate
+cd data_pipeline/notebooks
+jupyter notebook 00a_raw_data_acquisition.ipynb   # run all cells
+```
+
+- **Automatic:** NDVI and CHIRPS rainfall (WFP via HDX), and monthly temperature, rainfall,
+  soil wetness and runoff per county (NASA POWER point API, 47 counties × 11 years).
+- **Manual:** the 2019 census agricultural households table and the FAOSTAT bulk download.
+  The notebook prints exactly what to fetch and where to save it if it cannot download.
+
+`01_data_cleaning.ipynb` **refuses to build the panel** while a source is missing rather
+than zero-filling demographics for 47 counties, so a partial download fails loudly.
+
+### Reading the EDA output
+
+`02_eda.ipynb` writes one markdown file per chart *and* a combined
+`CHART_EXPLANATIONS.md`. Each explanation states how to read the chart, why it matters for
+the model, and what it does not prove. Start with the combined document.
+
 ## Research pipeline
 
 The research pipeline uses already-harmonized local source tables; its research inputs are not live. The dashboard has a separate Open-Meteo current-weather layer. To explicitly join the local tables and impute missing values using the national mean for the same month, then run the retrospective comparison:
@@ -106,13 +141,7 @@ The research workflow is the notebook sequence in `ml-models/notebooks/`, run in
 
 All six execute end to end from a clean clone. `05_model_comparison.ipynb` **copies its
 models into `apps/backend/ml_artifacts/`**, overwriting the served artifacts, so treat
-running it as a deployment action and review `git status` afterwards. The optional
-external download still uses a script:
-
-```bash
-# Optional, on a network that can reach data.4tu.nl:
-python data_pipeline/scripts/download_external.py
-```
+running it as a deployment action and review `git status` afterwards.
 
 The clean step refuses to overwrite existing output and emits imputation flags. The experiment uses 2015–2021 for training, 2022–2023 for model selection, and reports 2024–2025 separately. **All these years have been explored before; 2024–2025 is not an independent final test.** It uses same-month weather, historical baseline statistics, and retrospective demographic data, so it is not a demonstrated forward-looking forecast. It outputs metrics, per-county and per-month breakdowns, predictions, dataset hash, package versions, and a research candidate artifact and all four fitted models. It never replaces the production model.
 

@@ -250,9 +250,15 @@ ml-models/research_runs/**
 !ml-models/research_runs/**/*.md
 !ml-models/research_runs/**/*.json
 !ml-models/research_runs/**/*.csv
+# EDA runs are deliverables: the charts and their written explanations are cited by the
+# docs, so they stay tracked. `data_pipeline/outputs/**` matches directories too, so the
+# directories must be re-included before any file inside them can be.
 data_pipeline/outputs/**
-!data_pipeline/outputs/panel_2026_11_20/
+!data_pipeline/outputs/**/
 !data_pipeline/outputs/panel_2026_11_20/cleaned_panel.csv
+!data_pipeline/outputs/eda_*/
+!data_pipeline/outputs/eda_*/**
+!data_pipeline/outputs/eda_*/figures/*.png
 
 # Large binary deliverables stay out of Git (the 12.5 MB slide deck is kept on disk
 # and distributed separately). Small .md/.csv/.json deliverables stay tracked above.
