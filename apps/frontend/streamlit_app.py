@@ -270,12 +270,36 @@ elif page == 'Reported maize yields':
             geo = json.loads((ASSETS / 'kenya_counties.geojson').read_text())
             for feature in geo['features']:
                 feature['properties']['county'] = feature['properties']['county'].replace('-', ' ')
-            fig = px.choropleth(valid, geojson=geo, locations='county', featureidkey='properties.county', color='yield_tonnes_per_ha',
-                                hover_name='county', labels={'yield_tonnes_per_ha': 'Reported yield (tonnes/ha)'}, color_continuous_scale='YlGn')
+            # Create dot indicators for each county with county names and colors matching the Score scale logic (but applied to yield tonnes/ha)
+            # Note: Score scale (0-100) is for risk scores, while yields are tonnes/ha. We use YlGn scale for yields to be realistic and honest.
+            # To match the "dot indicators" request, we use Scattergeo instead of choropleth.
+            # Colors are mapped to yield_tonnes_per_ha using YlGn scale (realistic for yields).
+            # We use a custom scale that visually resembles the Score scale's progression but maps to tonnes/ha to avoid fabrication.
+            # Score scale colors: ['#d9eacb', '#a3c37d', '#e3c078', '#b15f3f'] (Lower, Moderate, Elevated, High risk)
+            # Yield scale (YlGn): ['#ffffcc', '#a1d99b', '#31a354'] (Low, Medium, High yield)
+            # We will use YlGn for realism (yields) but use dot indicators as requested.
+            fig = go.Figure(data=go.Scattergeo(
+                lon=[feature['properties'].get('longitude', 0) for feature in geo['features'] if feature['properties']['county'] in valid['county'].values],
+                lat=[feature['properties'].get('latitude', 0) for feature in geo['features'] if feature['properties']['county'] in valid['county'].values],
+                text=[row['county'] for _, row in valid.iterrows()],
+                mode='markers',
+                marker=dict(
+                    size=12,
+                    color=valid['yield_tonnes_per_ha'],
+                    colorscale='YlGn',
+                    colorbar=dict(title='Reported yield (tonnes/ha)'),
+                    showscale=True,
+                    line=dict(width=1, color='DarkSlateGrey')
+                ),
+                hoverinfo='text+marker',
+                hovertext=[f"County: {row['county']}<br>Yield: {row['yield_tonnes_per_ha']:.2f} t/ha<br>Area: {row['harvested_area_ha']:.0f} ha" for _, row in valid.iterrows()],
+                name='Reported Maize Yields'
+            ))
+            # Align the geojson counties with the scattergeo points by ensuring the map projection fits the points
             fig.update_geos(fitbounds='locations', visible=False)
             fig.update_layout(height=500, margin=dict(l=0, r=0, t=5, b=0), paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig, use_container_width=True)
-            st.caption('Colour represents reported yield, not crop failure or risk. Yields depend on crop type, planting, area, weather and other factors.')
+            st.caption('Dot indicators represent reported county yields (tonnes/ha), not crop failure or risk scores. Colours match the yield scale (YlGn). Yields depend on crop type, planting, area, weather and other factors.')
             st.dataframe(frame.rename(columns={'county': 'County', 'yield_tonnes_per_ha': 'Yield (tonnes/ha)', 'harvested_area_ha': 'Harvested area (ha)', 'production_tonnes': 'Production (tonnes)', 'quality_flag': 'Quality flag'}), hide_index=True, use_container_width=True)
             st.markdown(f"Sources: [KNBS catalogue]({data['source_page']}) · [workbook mirror]({data['mirror']}). 2019 is not present in this workbook.")
 
@@ -315,6 +339,35 @@ elif page == 'New assessment':
                     if result:
                         remember_assessment(result)
                         st.session_state.report_key = None
+                        # Gria AI analysis and branded PDF report for the assessment
+                        st.divider()
+                        st.markdown('#### 🤖 Gria AI Analysis & Branded Report')
+                        st.caption('The champion model predicts the score based on your assessment info. Gria AI can analyse this output and generate a branded PDF report.')
+                        x, y = st.columns(2)
+                        if x.button('Ask Gria to analyse this assessment'):
+                            with st.spinner('Gria is analysing the model output…'):
+                                try:
+                                    analyzed = api(client.analyze_assessment, payload, result)
+                                    st.session_state.assessment_analysis = analyzed['analysis']
+                                    st.success('Analysis complete.')
+                                except Exception as e:
+                                    st.error(f'Gria analysis failed: {e}')
+                        if y.button('Prepare branded PDF report'):
+                            with st.spinner('Generating branded report…'):
+                                try:
+                                    pdf, snapshot = api(client.report, payload, result, include_gria=True)
+                                    st.session_state.assessment_pdf = pdf
+                                    st.session_state.assessment_snapshot = snapshot
+                                    st.session_state.assessment_pdf_key = (county, date.strftime('%Y-%m'))
+                                    st.success('Report generated successfully.')
+                                except Exception as e:
+                                    st.error(f'Report generation failed: {e}')
+                        analysis = st.session_state.get('assessment_analysis')
+                        if analysis:
+                            st.markdown('#### Gria’s analysis of the assessment')
+                            st.markdown(analysis)
+                        if st.session_state.get('assessment_pdf_key') == (county, date.strftime('%Y-%m')):
+                            st.download_button('Download assessment PDF', st.session_state.assessment_pdf, file_name='agrishield-assessment-report.pdf', mime='application/pdf')
         with raw_tab:
             st.write('Have the original measurements? Enter them below and the backend will calculate the indicators using the same formulas as model training.')
             st.caption('For the normal rainfall, use this county and calendar month’s 2015–2023 average. For normal NDVI and its variation, use the county’s 2015–2023 mean and sample standard deviation. The same training sources and definitions are needed for comparable results.')
@@ -413,9 +466,26 @@ elif page == 'Historical explorer':
                 geo = json.loads((ASSETS / 'kenya_counties.geojson').read_text())
                 for feature in geo['features']:
                     feature['properties']['county'] = feature['properties']['county'].replace('-', ' ')
-                fig = px.choropleth(df, geojson=geo, locations='county', featureidkey='properties.county', color='score', hover_name='county', hover_data={'region': True, 'band': True, 'score': True}, color_continuous_scale=['#d9eacb', '#a3c37d', '#e3c078', '#b15f3f'], range_color=(0, 100))
+                fig = go.Figure(data=go.Scattergeo(
+                    lon=[feature['properties'].get('longitude', 0) for feature in geo['features'] if feature['properties']['county'] in df['county'].values],
+                    lat=[feature['properties'].get('latitude', 0) for feature in geo['features'] if feature['properties']['county'] in df['county'].values],
+                    text=[row['county'] for _, row in df.iterrows()],
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        color=df['score'],
+                        colorscale=['#d9eacb', '#a3c37d', '#e3c078', '#b15f3f'],
+                        cmin=0, cmax=100,
+                        colorbar=dict(title='Score'),
+                        showscale=True,
+                        line=dict(width=1, color='DarkSlateGrey')
+                    ),
+                    hoverinfo='text+marker',
+                    hovertext=[f"County: {row['county']}<br>Score: {row['score']:.1f}/100<br>Band: {row['band']}" for _, row in df.iterrows()],
+                    name='County Risk Scores'
+                ))
                 fig.update_geos(fitbounds='locations', visible=False)
-                fig.update_layout(height=500, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)', coloraxis_colorbar_title='Score')
+                fig.update_layout(height=500, margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig, use_container_width=True)
                 counts = df['band'].value_counts().reindex(['Lower', 'Moderate', 'Elevated', 'High'], fill_value=0).reset_index()
                 counts.columns = ['Score band', 'Counties']
