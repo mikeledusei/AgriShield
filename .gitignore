@@ -67,6 +67,9 @@ data_pipeline/data/**
 !data_pipeline/data/processed/Weather_FINAL.csv
 !data_pipeline/data/processed/Demographic_Crop_Activity_FINAL.csv
 !data_pipeline/data/processed/ml_base_2015_2025.csv
+# The joined panel 01_data_cleaning.ipynb writes and 02_eda.ipynb reads. Tracked so a
+# clone can run the EDA and its tests without first re-running acquisition + cleaning.
+!data_pipeline/data/processed/master_cleaned_2015_2025.csv
 # Deliberately not tracked: byte-identical duplicate of apps/frontend/assets/kenya_counties.geojson
 # and read by no script. The frontend copy is the tracked one.
 
