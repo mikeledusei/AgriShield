@@ -1,14 +1,13 @@
 """Historical, evidence-grounded Gria assistant with a labelled offline summary."""
-from typing import Optional
 import json
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langgraph.prebuilt import create_react_agent
-from core.config import settings
+
 from agents.tools import get_current_county_risk
-from services import logging_service, prediction_service
-from services.analysis_service import historical_evidence, explain_evidence
-from seed_counties import normalize_county_name
+from core.config import settings
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_nvidia_ai_endpoints import ChatNVIDIA
+from langgraph.prebuilt import create_react_agent
+from services import logging_service
+from services.analysis_service import explain_evidence, historical_evidence
 
 llm = None
 if (
@@ -51,8 +50,8 @@ if llm:
 
 
 def _synthesize_smart_advisory(
-    message: str, county_name: Optional[str], month: Optional[str] = None,
-    document_context: Optional[str] = None, document_name: Optional[str] = None,
+    message: str, county_name: str | None, month: str | None = None,
+    document_context: str | None = None, document_name: str | None = None,
 ) -> dict:
     """Return an explicitly labelled factual summary when the AI is unavailable."""
     evidence = historical_evidence(county_name, month)
@@ -67,10 +66,10 @@ def _synthesize_smart_advisory(
 
 def chat(
     message: str,
-    county_name: Optional[str] = None,
-    month: Optional[str] = None,
-    document_context: Optional[str] = None,
-    document_name: Optional[str] = None,
+    county_name: str | None = None,
+    month: str | None = None,
+    document_context: str | None = None,
+    document_name: str | None = None,
 ) -> dict:
     fallback = _synthesize_smart_advisory(
         message=message,

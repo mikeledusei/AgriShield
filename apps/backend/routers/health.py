@@ -1,38 +1,36 @@
-"""Health: distinguish reachable dependencies from merely configured ones."""
-from fastapi import APIRouter
-from sqlalchemy import text
+"""Health and readiness.
 
-from core.config import settings
-from database.connection import engine as db_engine
-from core.supabase_client import is_supabase_configured
+``/health`` is a cheap liveness probe: it answers 200 as long as the process is
+serving. ``/health/ready`` performs the real dependency checks and answers 503 when
+the app cannot score a request, so a deploy platform's health check fails instead
+of reporting green on a broken release.
+"""
+from fastapi import APIRouter, Response, status
 from schemas.pydantic_models import HealthResponse
-from services.prediction_service import get_engine
+from services.health_service import build_health_report
 
 router = APIRouter(tags=['Health'])
 
 
 @router.get('/health', response_model=HealthResponse)
 def health_check():
-    model = get_engine()
-    db_ready = False
-    if db_engine is not None:
-        try:
-            with db_engine.connect() as conn:
-                conn.execute(text('SELECT 1'))
-            db_ready = True
-        except Exception:
-            pass
-    from agents.gria_agent import agent_executor
-    gria_ready = agent_executor is not None
-    model_ready = model.model is not None and bool(model.feature_cols)
-    services = {
-        'database': 'connected' if db_ready else 'unreachable',
-        'ml_engine': model.model_name if model_ready else 'unavailable',
-        'historical_data': 'available' if model.county_history else 'unavailable',
-        'supabase': 'configured (not checked)' if is_supabase_configured() else 'not configured',
-        'redis': 'configured (not checked)' if settings.REDIS_URL else 'not configured',
-        'gria_ai': 'configured (not checked)' if gria_ready else 'summary mode',
-    }
-    return HealthResponse(status='healthy' if db_ready and model_ready else 'degraded', services=services,
-                          model_loaded=model_ready, model_name=model.model_name if model_ready else 'unavailable',
-                          gria_available=gria_ready, database_connected=db_ready)
+    """Liveness: the process is up. Does not touch the model or the database."""
+    return HealthResponse(status='ok', services={'process': 'running'},
+                          model_loaded=False, model_name='unchecked',
+                          gria_available=False, database_connected=False)
+
+
+@router.get('/health/ready', response_model=HealthResponse, responses={503: {'model': HealthResponse}})
+def readiness(response: Response):
+    report = build_health_report()
+    if not report.ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return HealthResponse(
+        status='ready' if report.ready else 'degraded',
+        services=report.services,
+        model_loaded=report.services.get('ml_engine') not in (None, 'unavailable'),
+        model_name=report.services.get('ml_engine', 'unavailable'),
+        gria_available=report.services.get('gria_ai') == 'configured',
+        database_connected=report.services.get('database') == 'connected',
+        problems=report.problems,
+    )

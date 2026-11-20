@@ -1,19 +1,19 @@
 """Retrospective annual maize-yield research; not a live crop-risk forecast."""
-from pathlib import Path
 import argparse
 import hashlib
 import json
-import sys
+from pathlib import Path
+
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge
+from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from xgboost import XGBRegressor
-from lightgbm import LGBMRegressor
 
 ROOT = Path(__file__).resolve().parents[2]
 OUTCOMES = ROOT / 'data_pipeline/data/external/knbs_candidate/maize_outcomes_clean.csv'
@@ -81,7 +81,7 @@ def run(out):
             pred = model.predict(rows[FEATURES])
             results[name][label] = metrics(rows.yield_tonnes_per_ha, pred)
             predictions.extend({'model': name, 'split': label, 'county': c, 'year': int(y), 'reported_yield': float(t), 'predicted_yield': float(p)}
-                               for c, y, t, p in zip(rows.county, rows.year, rows.yield_tonnes_per_ha, pred))
+                               for c, y, t, p in zip(rows.county, rows.year, rows.yield_tonnes_per_ha, pred, strict=False))
     selected = min(models, key=lambda name: results[name]['validation_2018']['mae_tonnes_per_ha'])
     baselines = {label: metrics(rows.yield_tonnes_per_ha, rows.prior_yield_mean)
                  for label, rows in [('validation_2018', validation), ('holdout_2020', test)]}

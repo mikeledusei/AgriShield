@@ -1,0 +1,8 @@
+# Packages used only by data_pipeline/scripts and ml-models/scripts.
+# Not installed into the API image: this keeps the container small and removes
+# modules the served application never imports.
+-r requirements.txt
+
+xgboost>=2.1.0
+matplotlib>=3.9,<4
+openpyxl>=3.1.0

@@ -3,8 +3,8 @@
 Revision ID: 20261120_history
 Revises: 20261120_snapshots
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = '20261120_history'
 down_revision = '20261120_snapshots'

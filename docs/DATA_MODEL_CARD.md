@@ -34,4 +34,16 @@ The new `ml-models/scripts/train.py` is a separate retrospective research experi
 
 To replace the proxy responsibly, agree with data owners and agricultural experts on (1) crop and forage targets, units, county boundaries, forecast horizons and decision thresholds; (2) trusted, dated county-level outcome records, provenance, coverage and rights; and (3) reliable observation feeds with publication timestamps, quality flags, allowed use, and refresh schedules. County yield or measured crop loss and measured forage availability or deficit require **separate outcome definitions and models**. The national marketed-value crop table in this repository does not provide county-level crop losses or forage outcomes.
 
+## Accepted input distribution
+
+The API rejects feature values outside the ranges recorded in
+`apps/backend/ml_artifacts/training_feature_ranges.json`, which are the min/max of the
+training matrix. This is a distribution check, not a guarantee of accuracy: an
+in-range value can still be rare, correlated implausibly with the others, or measured
+with a different definition. A caller who supplies `accept_extrapolation=true` receives
+a score with `extrapolated: true` and `training_range_warnings`; stored reports, PDFs and
+the dashboard all carry that label. Of the 6,204 packaged county-months, five (all in
+the held-out 2024 flood season) fall outside the training range — an example of why the
+check exists rather than evidence that the model is right everywhere else.
+
 A production pipeline then needs source adapters, automated ingestion and monitoring, freshness indicators, handling for missing and delayed data, as-of feature generation, independent temporal and geographic validation, calibration, documented alert thresholds, expert review of suggested actions, audit and monitoring, and live service/security verification. Until those prerequisites exist, neither a real-time map nor genuine outcome forecasts can be verified. Displaying the latest stored historical period as live would be misleading.

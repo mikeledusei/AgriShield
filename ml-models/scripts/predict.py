@@ -1,6 +1,7 @@
 """Run single-row or batch inference using the LightGBM champion artifact."""
-from pathlib import Path
 import json
+from pathlib import Path
+
 import joblib
 import pandas as pd
 

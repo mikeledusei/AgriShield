@@ -1,7 +1,37 @@
-"""HTTP-only client for AgriShield. The frontend never loads model artifacts."""
+"""HTTP-only client for AgriShield. The frontend never loads model artifacts.
+
+The base URL is validated once, at construction: a misconfigured deployment should
+fail loudly at startup rather than after the first click with a confusing
+"connection refused" against a localhost default.
+"""
 import os
 from typing import Any
+from urllib.parse import urlparse
+
 import requests
+
+
+class ConfigurationError(RuntimeError):
+    """Raised when the dashboard cannot be pointed at the backend."""
+
+
+def _resolve_base_url(explicit: str | None) -> str:
+    raw = (explicit or os.getenv("AGRISHIELD_API_URL") or os.getenv("BACKEND_URL") or "").strip()
+    if not raw:
+        # Local development only: an unset variable in a container is a mistake.
+        if os.getenv("AGRISHIELD_ENV", "development").lower() == "production":
+            raise ConfigurationError(
+                "AGRISHIELD_API_URL is not set. Point it at the backend, for example "
+                "https://agrishield-api.example.com/api/v1."
+            )
+        raw = "http://127.0.0.1:8000/api/v1"
+    parsed = urlparse(raw)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ConfigurationError(f"AGRISHIELD_API_URL is not a valid http(s) URL: {raw!r}")
+    url = raw.rstrip("/")
+    if not url.endswith("/api/v1"):
+        url += "/api/v1"
+    return url
 
 
 class APIError(Exception):
@@ -10,11 +40,12 @@ class APIError(Exception):
 
 class AgriShieldClient:
     def __init__(self, base_url: str | None = None, token: str | None = None):
-        self.base_url = (base_url or os.getenv("AGRISHIELD_API_URL") or os.getenv("BACKEND_URL") or "http://127.0.0.1:8000/api/v1").rstrip("/")
-        if not self.base_url.endswith("/api/v1"):
-            self.base_url += "/api/v1"
+        self.base_url = _resolve_base_url(base_url)
         self.token = token or os.getenv("AGRISHIELD_API_TOKEN")
-        self.timeout = float(os.getenv("AGRISHIELD_API_TIMEOUT", "30"))
+        try:
+            self.timeout = float(os.getenv("AGRISHIELD_API_TIMEOUT", "30"))
+        except ValueError:
+            raise ConfigurationError("AGRISHIELD_API_TIMEOUT must be a number of seconds.") from None
 
     def _request(self, method: str, path: str, *, binary: bool = False, **kwargs: Any):
         headers = {"Authorization": f"Bearer {self.token}"} if self.token else {}
@@ -24,13 +55,17 @@ class AgriShieldClient:
         except requests.RequestException as exc:
             raise APIError("The AgriShield backend could not be reached. Check the connection and try again; no substitute result was generated.") from exc
         if not response.ok:
+            request_id = response.headers.get("X-Request-ID")
             try:
                 detail = response.json().get("detail", "Request failed")
                 if isinstance(detail, list):
                     detail = "; ".join(f"{' / '.join(str(x) for x in item.get('loc', []) if x != 'body')}: {item.get('msg', 'Invalid value')}" for item in detail)
             except (ValueError, AttributeError):
                 detail = "The backend could not complete this request."
-            raise APIError(f"{detail} (HTTP {response.status_code})")
+            suffix = f" (HTTP {response.status_code}"
+            if request_id:
+                suffix += f", request {request_id}"
+            raise APIError(f"{detail}{suffix})")
         if binary:
             return response.content
         try:

@@ -1,8 +1,10 @@
 """Save descriptive charts of reported county maize outcomes; never overwrite."""
 import argparse
 from pathlib import Path
-import pandas as pd
+
 import matplotlib
+import pandas as pd
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
@@ -21,7 +23,9 @@ def save(out):
     fig, ax = plt.subplots(figsize=(9, 4))
     ax.bar(years.index.astype(str), years['median'], color='#618f62')
     ax.set(xlabel='Year', ylabel='Median county yield (tonnes/ha)', title='Reported county maize yields')
-    fig.tight_layout(); fig.savefig(out / 'maize_median_yield.png', dpi=140); plt.close(fig)
+    fig.tight_layout()
+    fig.savefig(out / 'maize_median_yield.png', dpi=140)
+    plt.close(fig)
     summary = (f"# Reported maize outcome exploration\n\n"
                f"The mirrored workbook contains {len(df)} county-year rows for 47 counties across 2012–2018 and 2020; "
                f"2019 is missing. {len(valid)} rows pass the basic area and consistency checks; "

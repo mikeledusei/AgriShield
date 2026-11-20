@@ -1,43 +1,68 @@
-"""Database connection to Neon (serverless PostgreSQL) or local SQLite fallback."""
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
-from fastapi import HTTPException, status
+"""Database engine and session factory.
+
+Production uses PostgreSQL/Neon with bounded pooling and timeouts; tests and local
+development fall back to SQLite. Schema is owned by Alembic — nothing here calls
+``create_all``.
+"""
+from collections.abc import Iterator
+
 from core.config import settings
+from fastapi import HTTPException, status
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 Base = declarative_base()
-engine = None
-SessionLocal = None
 
-if settings.DATABASE_URL:
-    database_url = settings.DATABASE_URL.strip()
-    if "+asyncpg" in database_url:
-        database_url = database_url.replace("+asyncpg", "")
 
-    if database_url.startswith("sqlite"):
-        engine = create_engine(
-            database_url,
-            connect_args={"check_same_thread": False},
+def _normalise_url(raw: str) -> str:
+    """Accept the URL spellings hosted providers hand out."""
+    url = raw.strip()
+    # A synchronous engine cannot use the async driver.
+    url = url.replace("+asyncpg", "").replace("+psycopg_async", "")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    if url.startswith("postgresql://") and "sslmode" not in url:
+        separator = "&" if "?" in url else "?"
+        url = f"{url}{separator}sslmode=require"
+    return url
+
+
+def _build_engine() -> Engine | None:
+    raw = settings.resolved_database_url
+    if not raw:
+        return None
+    url = _normalise_url(raw)
+
+    if url.startswith("sqlite"):
+        return create_engine(
+            url,
+            connect_args={"check_same_thread": False, "timeout": 30},
         )
-    else:
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-        if "sslmode" not in database_url and (
-            database_url.startswith("postgres://") or database_url.startswith("postgresql://")
-        ):
-            if database_url.startswith("postgres://"):
-                database_url = database_url.replace("postgres://", "postgresql://", 1)
-            separator = "&" if "?" in database_url else "?"
-            database_url = f"{database_url}{separator}sslmode=require"
-        engine = create_engine(database_url, pool_pre_ping=True)
 
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_POOL_SIZE,
+        pool_recycle=settings.DB_POOL_RECYCLE,
+        # Bound connection acquisition so a cold Neon compute fails fast instead of
+        # hanging the request thread indefinitely.
+        pool_timeout=settings.DB_CONNECT_TIMEOUT,
+        connect_args={"connect_timeout": settings.DB_CONNECT_TIMEOUT},
+        echo=settings.DB_ECHO,
+    )
+
+
+engine: Engine | None = _build_engine()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine) if engine else None
 
 
 def is_configured() -> bool:
     return engine is not None
 
 
-def get_db():
+def get_db() -> Iterator[Session]:
     if SessionLocal is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

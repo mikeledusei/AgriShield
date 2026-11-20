@@ -1,24 +1,25 @@
 """Predict from a complete, user-supplied feature vector, without fallback data."""
 import csv
 import io
-import math
 import json
+import math
+from xml.sax.saxutils import escape
 
 import pandas as pd
+from core.auth import get_current_user
+from core.config import settings
+from core.scales import score_and_band
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib import colors
-from xml.sax.saxutils import escape
-
-from core.auth import get_current_user
-from core.config import settings
-from schemas.manual_prediction import ManualPredictionRequest, RawObservationRequest, CompareInputsRequest
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from schemas.manual_prediction import CompareInputsRequest, ManualPredictionRequest, RawObservationRequest
 from seed_counties import COUNTY_METADATA, normalize_county_name
-from services.prediction_service import get_engine, ARTIFACT_DIR
+from services import logging_service
+from services.prediction_service import ARTIFACT_DIR, get_engine
 
 router = APIRouter(prefix="/predictions", tags=["User observations"])
 
@@ -49,7 +50,7 @@ def score_observation(req: ManualPredictionRequest) -> dict:
     if engine.model is None or not engine.feature_cols:
         raise HTTPException(status_code=503, detail="The trained model is unavailable. No substitute score has been generated.")
     month = int(req.period[5:7])
-    vector = req.model_dump(exclude={"county_name", "period"})
+    vector = req.model_values()
     vector["month_sin"] = round(math.sin(2 * math.pi * month / 12.0), 6)
     vector["month_cos"] = round(math.cos(2 * math.pi * month / 12.0), 6)
     return score_vector(county, req.period, vector)
@@ -61,7 +62,12 @@ def score_vector(county: str, period: str, vector: dict) -> dict:
     if engine.model is None or not engine.feature_cols:
         raise HTTPException(status_code=503, detail="The trained model is unavailable. No substitute score has been generated.")
     if set(vector) != set(engine.feature_cols):
-        raise HTTPException(status_code=503, detail="The loaded model's feature contract does not match this form.")
+        # The form and the artifact disagree: a deployment fault, not a retryable one.
+        logging_service.error(
+            'Feature contract mismatch: form has %s, model expects %s',
+            sorted(vector), sorted(engine.feature_cols),
+        )
+        raise HTTPException(status_code=500, detail="The loaded model's feature contract does not match this form.")
     try:
         frame = pd.DataFrame([[vector[c] for c in engine.feature_cols]], columns=engine.feature_cols)
         probability = float(engine.model.predict_proba(frame)[0][1])
@@ -78,7 +84,7 @@ def score_vector(county: str, period: str, vector: dict) -> dict:
                 contributions = {'baseline_log_odds': float(raw[-1]),
                                  'values': sorted([{'feature': name, 'label': labels.get(name, 'Time of year (sine)' if name == 'month_sin' else 'Time of year (cosine)' if name == 'month_cos' else name),
                                                     'value': float(vector[name]), 'contribution': float(value)}
-                                                   for name, value in zip(engine.feature_cols, raw[:-1])],
+                                                   for name, value in zip(engine.feature_cols, raw[:-1], strict=False)],
                                                   key=lambda item: abs(item['contribution']), reverse=True)}
     except Exception:
         # Explanation failure must not become invented zero contributions.
@@ -97,9 +103,18 @@ def score_vector(county: str, period: str, vector: dict) -> dict:
                                            'value': vector[key], 'training_min': bounds['min'], 'training_max': bounds['max']})
     except (OSError, KeyError, ValueError, TypeError):
         pass
-    score = int(round(probability * 100))
-    # Scores are uncalibrated model outputs; tiers are descriptive, not operational alerts.
-    band = "Lower" if score < 25 else "Moderate" if score < 50 else "Elevated" if score < 75 else "High"
+    # Scores are uncalibrated model outputs; bands are descriptive, not operational alerts.
+    score, band = score_and_band(probability)
+    extrapolated = bool(range_warnings)
+    meaning = (
+        "Model estimate of the training vegetation-stress proxy, not a confirmed crop loss or forage deficit. "
+        "The score is not a calibrated probability or an operational warning."
+    )
+    if extrapolated:
+        meaning += (
+            " At least one input is outside the model's training range, so this result is an extrapolation"
+            " and should not be relied on."
+        )
     return {
         "county_name": county, "period": period, "score": score,
         "model_probability": probability, "band": band, "model_used": engine.model_name,
@@ -107,7 +122,8 @@ def score_vector(county: str, period: str, vector: dict) -> dict:
         "model_sha256": engine.model_sha256,
         "explanation": contributions,
         "training_range_check": range_check, "training_range_warnings": range_warnings,
-        "meaning": "Model estimate of the training vegetation-stress proxy, not a confirmed crop loss or forage deficit. The score is not a calibrated probability or an operational warning.",
+        "extrapolated": extrapolated,
+        "meaning": meaning,
     }
 
 
@@ -151,14 +167,13 @@ async def predict_csv(file: UploadFile = File(...), user: dict = Depends(get_cur
 
 def render_assessment_pdf(result: dict) -> io.BytesIO:
     """Render a branded report from a stored result; never run inference here."""
+    from reportlab.graphics.shapes import Circle, Drawing, Line, PolyLine, String
     from reportlab.lib.enums import TA_LEFT
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.graphics.shapes import Drawing, String, Line, PolyLine, Circle
 
     green = colors.HexColor('#173e2c')
     medium = colors.HexColor('#2b6842')
     pale = colors.HexColor('#edf4e9')
-    gold = colors.HexColor('#ca9b4c')
     styles = getSampleStyleSheet()
     body = ParagraphStyle('AgriBody', parent=styles['BodyText'], fontSize=9, leading=14, textColor=colors.HexColor('#263d30'), spaceAfter=8)
     small = ParagraphStyle('AgriSmall', parent=body, fontSize=8, leading=11)
@@ -178,14 +193,19 @@ def render_assessment_pdf(result: dict) -> io.BytesIO:
         canvas.circle(40, h - 29, 15, fill=1, stroke=0)
         canvas.setFillColor(green)
         path = canvas.beginPath()
-        path.moveTo(33, h - 31); path.curveTo(35, h - 20, 48, h - 20, 47, h - 25)
-        path.curveTo(46, h - 33, 39, h - 38, 33, h - 31); canvas.drawPath(path, fill=1, stroke=0)
+        path.moveTo(33, h - 31)
+        path.curveTo(35, h - 20, 48, h - 20, 47, h - 25)
+        path.curveTo(46, h - 33, 39, h - 38, 33, h - 31)
+        canvas.drawPath(path, fill=1, stroke=0)
         canvas.setStrokeColor(colors.HexColor('#b8dc9c'))
         canvas.line(36, h - 34, 44, h - 25)
-        canvas.setFillColor(colors.white); canvas.setFont('Helvetica-Bold', 15)
+        canvas.setFillColor(colors.white)
+        canvas.setFont('Helvetica-Bold', 15)
         canvas.drawString(64, h - 26, 'AgriShield')
-        canvas.setFont('Helvetica', 8); canvas.drawString(65, h - 40, 'AGRICULTURAL INTELLIGENCE')
-        canvas.setFillColor(colors.HexColor('#6a7d6d')); canvas.setFont('Helvetica', 8)
+        canvas.setFont('Helvetica', 8)
+        canvas.drawString(65, h - 40, 'AGRICULTURAL INTELLIGENCE')
+        canvas.setFillColor(colors.HexColor('#6a7d6d'))
+        canvas.setFont('Helvetica', 8)
         canvas.drawString(36, 26, 'RESEARCH PROTOTYPE  |  Verify decisions with local experts')
         canvas.drawRightString(w - 36, 26, f'{doc.page}')
         canvas.restoreState()
@@ -239,7 +259,11 @@ def render_assessment_pdf(result: dict) -> io.BytesIO:
         story.append(paragraph('Model contributions were unavailable.'))
     warnings = result.get('training_range_warnings', [])
     if warnings:
-        story.append(paragraph('Outside training ranges: ' + ', '.join(item['label'] for item in warnings) + '. The model may be less reliable.', small))
+        story.append(paragraph(
+            'Extrapolation warning: ' + ', '.join(item['label'] for item in warnings)
+            + ' fall outside the model training range, so this score is an extrapolation and may be unreliable.',
+            small,
+        ))
     elif result.get('training_range_check') != 'checked':
         story.append(paragraph('Training-range checks are unavailable for this model.', small))
     else:
@@ -293,10 +317,10 @@ def historical_observations(month: str, user: dict = Depends(get_current_user)):
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Historical observations could not be scored.") from exc
     result = []
-    for county, probability in zip(counties, probabilities):
-        score = int(round(float(probability) * 100))
+    for county, probability in zip(counties, probabilities, strict=False):
+        score, band = score_and_band(float(probability))
         result.append({"county": county, "region": COUNTY_METADATA.get(county, {}).get("region"),
-                       "score": score, "band": "Lower" if score < 25 else "Moderate" if score < 50 else "Elevated" if score < 75 else "High"})
+                       "score": score, "band": band})
     return {"period": month, "model_used": engine.model_name, "observations": result}
 
 @router.get('/historical-detail')
@@ -379,7 +403,7 @@ def historical_trends(county_name: str, through: str, user: dict = Depends(get_c
             'observations': [{'period': str(row['year_month']), 'score': int(round(float(score) * 100)),
                               'rainfall_mm': float(row['rainfall_mm']), 'ndvi_lag1': float(row['ndvi_lag1']),
                               'soil_moisture': float(row['soil_moisture'])}
-                             for (_, row), score in zip(rows.iterrows(), scores)]}
+                             for (_, row), score in zip(rows.iterrows(), scores, strict=False)]}
 
 @router.post('/compare-inputs')
 def compare_inputs(req: CompareInputsRequest, user: dict = Depends(get_current_user)):

@@ -15,6 +15,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'apps/frontend'))
 sys.path.insert(0, str(ROOT / 'apps/backend'))
 
+from datetime import UTC
+
 from main import app
 from services.prediction_service import get_engine
 from shared.api_client import AgriShieldClient, APIError
@@ -227,11 +229,15 @@ def test_explanation_reconstructs_the_model_output(api, example):
     assert 1 / (1 + math.exp(-raw)) == pytest.approx(result['model_probability'], abs=1e-8)
 
 
-def test_health_does_not_call_unreachable_database_connected(api):
-    with patch('routers.health.db_engine', None):
-        response = api.get('/api/v1/health')
-        assert response.json()['status'] == 'degraded'
-        assert response.json()['services']['database'] == 'unreachable'
+def test_readiness_reports_an_unreachable_database(api):
+    from services import health_service
+    with patch.object(health_service, 'engine', None):
+        response = api.get('/api/v1/health/ready')
+        assert response.status_code == 503
+        body = response.json()
+        assert body['status'] == 'degraded'
+        assert body['services']['database'] == 'not configured'
+        assert any('DATABASE_URL' in problem for problem in body['problems'])
 
 
 def test_documents_are_extracted_as_context_not_scored(api):
@@ -267,16 +273,47 @@ def test_engine_never_invents_missing_historical_data():
         with pytest.raises(ValueError, match='No historical data'):
             engine._build_vector('Nakuru', '2025-02')
     with patch.object(engine, 'model', None):
-        with pytest.raises(ValueError, match='No trained-model score'):
-            engine._score('Nakuru', '2025-02', None, {})
+        with pytest.raises(ValueError, match='No trained model'):
+            engine._score('Nakuru', '2025-02', None)
+    with pytest.raises(ValueError, match='No complete historical feature row'):
+        engine._score('Nakuru', '2025-02', None)
 
 
-def test_training_range_warnings_are_backed_by_the_matching_model(api, example):
+def test_inputs_outside_the_training_range_are_rejected(api, example):
+    """Tree models extrapolate confidently, so out-of-distribution input is refused."""
     result = api.post('/api/v1/predictions/from-inputs', json=example).json()
     assert result['training_range_check'] == 'checked'
-    unusual = {**example, 'rainfall_mm': 3000, 'rain_3m_sum': 4000}
-    result = api.post('/api/v1/predictions/from-inputs', json=unusual).json()
+    assert result['extrapolated'] is False
+
+    unusual = {**example, 'rainfall_mm': 1000, 'rain_3m_sum': 1500}
+    rejected = api.post('/api/v1/predictions/from-inputs', json=unusual)
+    assert rejected.status_code == 422
+    detail = str(rejected.json()['detail'])
+    assert 'rainfall_mm' in detail and 'training range' in detail
+    assert 'accept_extrapolation' in detail
+
+
+def test_extrapolation_can_be_opted_into_and_is_flagged(api, example):
+    unusual = {**example, 'rainfall_mm': 1000, 'rain_3m_sum': 1500, 'accept_extrapolation': True}
+    response = api.post('/api/v1/predictions/from-inputs', json=unusual)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['extrapolated'] is True
     assert {'rainfall_mm', 'rain_3m_sum'} <= {item['feature'] for item in result['training_range_warnings']}
+    assert 'extrapolation' in result['meaning']
+
+
+def test_wrong_unit_entry_gets_a_targeted_hint(api, example):
+    """The most common mistake: entering a percentage where a fraction is expected."""
+    response = api.post('/api/v1/predictions/from-inputs',
+                        json={**example, 'forage_dryness_index': 40})
+    assert response.status_code == 422
+    detail = str(response.json()['detail']).lower()
+    assert 'forage_dryness_index' in detail
+    assert 'not a percentage' in detail
+
+
+def test_range_check_degrades_when_the_model_digest_differs(api, example):
     with patch.object(get_engine(), 'model_sha256', '0' * 64):
         result = api.post('/api/v1/predictions/from-inputs', json=example).json()
         assert result['training_range_check'] == 'unavailable'
@@ -284,8 +321,9 @@ def test_training_range_warnings_are_backed_by_the_matching_model(api, example):
 
 def test_expired_reports_are_inaccessible_and_can_be_cleaned(api, example):
     from datetime import datetime, timedelta
-    from database.models import AssessmentReportSnapshot
+
     from database.connection import SessionLocal
+    from database.models import AssessmentReportSnapshot
     from routers.snapshot_reports import cleanup_expired
     result = api.post('/api/v1/predictions/from-inputs', json=example).json()
     saved = api.post('/api/v1/reports/assessments', json={'inputs': example, 'expected_model_sha256': result['model_sha256'], 'expected_probability': result['model_probability']}).json()
@@ -315,8 +353,8 @@ def test_historical_detail_matches_map_and_shap(api):
 
 
 def test_gria_uses_exact_evidence_and_fails_closed(api, example):
-    from langchain_core.messages import AIMessage
     from agents import gria_agent
+    from langchain_core.messages import AIMessage
     class Agent:
         def invoke(self, data):
             prompt = data['messages'][0].content
@@ -344,11 +382,12 @@ def test_gria_uses_exact_evidence_and_fails_closed(api, example):
 
 
 def test_branded_gria_report_is_stored_and_never_rescores(api):
+    import json
+
+    import pdfplumber
     from agents import gria_agent
     from database.connection import SessionLocal
     from database.models import AssessmentReportSnapshot
-    import json
-    import pdfplumber
     with patch.object(gria_agent, 'agent_executor', None):
         response = api.post('/api/v1/reports/historical', json={'county_name': 'Nakuru', 'month': '2024-05'})
     assert response.status_code == 201, response.text
@@ -385,11 +424,12 @@ def test_map_all_months_have_the_47_matching_boundary_names(api):
 
 
 def test_dashboard_historical_gria_and_report_flow(api):
-    from streamlit.testing.v1 import AppTest
     from agents import gria_agent
+    from streamlit.testing.v1 import AppTest
     class ResponseAdapter:
         def __init__(self, response):
             self.response, self.ok, self.status_code, self.content = response, response.is_success, response.status_code, response.content
+            self.headers = response.headers
         def json(self):
             return self.response.json()
     def bridge(method, url, **kwargs):
@@ -408,9 +448,9 @@ def test_dashboard_historical_gria_and_report_flow(api):
 
 
 def test_manual_gria_report_keeps_original_generated_text(api, example):
+    import pdfplumber
     from agents import gria_agent
     from langchain_core.messages import AIMessage
-    import pdfplumber
     class Agent:
         def invoke(self, data):
             return {'messages': [AIMessage(content='Check the field & consult local experts before acting.')]}
@@ -432,6 +472,7 @@ def test_manual_gria_report_keeps_original_generated_text(api, example):
 
 def test_private_history_restores_saved_result_and_isolates_keys(api, example):
     from datetime import datetime, timedelta
+
     from database.connection import SessionLocal
     from database.models import HistoryRecord
     from routers.history import purge_history
@@ -466,9 +507,10 @@ def test_private_history_restores_saved_result_and_isolates_keys(api, example):
 
 
 def test_live_weather_backend_rejects_stale_or_unavailable_data(api):
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
+
     from routers import live
-    now = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M')
+    now = datetime.now(UTC).strftime('%Y-%m-%dT%H:%M')
     def data(timestamp):
         return [{'location_id': i, 'current': {'time': timestamp, 'interval': 900, 'temperature_2m': 23.0,
                    'relative_humidity_2m': 55, 'precipitation': 0.1, 'wind_speed_10m': 5}}
@@ -477,7 +519,7 @@ def test_live_weather_backend_rejects_stale_or_unavailable_data(api):
         def __init__(self, body): self.body = body
         def raise_for_status(self): pass
         def json(self): return self.body
-    live._cache = None
+    live.reset_cache()
     with patch('routers.live.httpx.get', return_value=Response(data(now))) as request:
         result = api.get('/api/v1/live/weather')
         assert result.status_code == 200
@@ -486,33 +528,35 @@ def test_live_weather_backend_rejects_stale_or_unavailable_data(api):
         assert result.json()['observations'][0]['interval_seconds'] == 900
         assert api.get('/api/v1/live/weather').status_code == 200
         assert request.call_count == 1
-    live._cache = None
-    old = (datetime.now(timezone.utc) - timedelta(hours=4)).strftime('%Y-%m-%dT%H:%M')
+    live.reset_cache()
+    old = (datetime.now(UTC) - timedelta(hours=4)).strftime('%Y-%m-%dT%H:%M')
     with patch('routers.live.httpx.get', return_value=Response(data(old))):
         assert api.get('/api/v1/live/weather').status_code == 503
-    live._cache = None
+    live.reset_cache()
     with patch('routers.live.httpx.get', side_effect=__import__('httpx').ConnectError('offline')):
         assert api.get('/api/v1/live/weather').status_code == 503
 
 
 def test_live_map_and_history_ui_use_backend(api, example):
-    from datetime import datetime, timezone
-    from streamlit.testing.v1 import AppTest
+    from datetime import datetime
+
     from routers import live
     from seed_counties import COUNTY_METADATA
+    from streamlit.testing.v1 import AppTest
     class ResponseAdapter:
         def __init__(self, response):
             self.response, self.ok, self.status_code, self.content = response, response.is_success, response.status_code, response.content
+            self.headers = response.headers
         def json(self): return self.response.json()
     def bridge(method, url, **kwargs):
         kwargs.pop('timeout', None)
         return ResponseAdapter(api.request(method, '/api/v1' + url.split('/api/v1', 1)[1], **kwargs))
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     observations = [{'county': c, 'latitude': m['latitude'], 'longitude': m['longitude'], 'time_utc': now,
                      'temperature_c': 23.0, 'humidity_percent': 55, 'precipitation_mm': .1, 'wind_kmh': 5.0, 'interval_seconds': 900}
                     for c, m in sorted(COUNTY_METADATA.items())]
     response = {'source': 'Open-Meteo', 'retrieved_at': now, 'observations': observations}
-    live._cache = None
+    live.reset_cache()
     with patch('shared.api_client.requests.request', side_effect=bridge), patch('routers.live._retrieve_weather', return_value=response):
         dashboard = AppTest.from_file(str(ROOT / 'apps/frontend/streamlit_app.py'), default_timeout=60).run()
         dashboard.radio[0].set_value('Live conditions').run(timeout=60)
@@ -547,6 +591,7 @@ def test_maize_dashboard_page_renders(api):
     class ResponseAdapter:
         def __init__(self, response):
             self.response, self.ok, self.status_code, self.content = response, response.is_success, response.status_code, response.content
+            self.headers = response.headers
         def json(self): return self.response.json()
     def bridge(method, url, **kwargs):
         kwargs.pop('timeout', None)
@@ -556,3 +601,58 @@ def test_maize_dashboard_page_renders(api):
         dashboard.radio[0].set_value('Reported maize yields').run(timeout=60)
         assert not dashboard.exception, [x.value for x in dashboard.exception]
         assert any('46 / 47' in str(m.value) for m in dashboard.metric)
+
+
+def test_county_map_places_labels_without_overlap():
+    """Every county gets a dot; labels never overlap each other or leave the frame."""
+    import shared.county_map as county_map_module
+    from shared.map_data import county_centroids
+
+    class _Stub:
+        def markdown(self, *args, **kwargs):
+            return None
+
+    county_map = county_map_module.county_map
+    original = county_map_module.st
+    county_map_module.st = _Stub()
+    try:
+        centroids = county_centroids.__wrapped__()
+        assert len(centroids) == 47
+        bands = ['Lower', 'Moderate', 'Elevated', 'High']
+        rows = [
+            {'county': name, **point, 'band': bands[index % 4]}
+            for index, (name, point) in enumerate(sorted(centroids.items()))
+        ]
+        figure = county_map(rows, band_key='band')
+    finally:
+        county_map_module.st = original
+
+    markers = [trace for trace in figure.data if getattr(trace, 'mode', '') == 'markers' and trace.text]
+    assert sum(len(trace.text) for trace in markers) == 47  # no county dropped
+
+    # Reconstruction uses the renderer's own constants, so the test cannot drift from it.
+    char_width = county_map_module.CHAR_WIDTH
+    line_height = county_map_module.LINE_HEIGHT
+    pad = county_map_module.LABEL_PAD
+    boxes = []
+    for annotation in figure.layout.annotations:
+        lines = annotation.text.split('<br>')
+        width = char_width * max(len(line) for line in lines) + 2 * pad
+        height = line_height * len(lines) + 2 * pad
+        anchor_x, anchor_y = annotation.xanchor, annotation.yanchor
+        x0 = annotation.x if anchor_x == 'left' else annotation.x - width if anchor_x == 'right' else annotation.x - width / 2
+        y0 = annotation.y if anchor_y == 'bottom' else annotation.y - height if anchor_y == 'top' else annotation.y - height / 2
+        boxes.append((x0, y0, x0 + width, y0 + height))
+
+    for index, box in enumerate(boxes):
+        assert box[0] >= 33.0 and box[2] <= 42.5, f'label clipped horizontally: {box}'
+        for other in boxes[index + 1:]:
+            assert (
+                box[2] <= other[0] or box[0] >= other[2] or box[3] <= other[1] or box[1] >= other[3]
+            ), f'labels overlap: {box} vs {other}'
+
+    # The legend colours must be the score-band palette, not a rescaled gradient.
+    from shared.scales import BAND_COLORS
+
+    filled = {trace.marker.color for trace in markers}
+    assert filled <= set(BAND_COLORS.values()) | {None}

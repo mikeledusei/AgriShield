@@ -1,0 +1,41 @@
+[project]
+name = "agrishield"
+version = "1.0.0"
+description = "Kenya-focused agricultural data science and decision-support research prototype"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    "error::DeprecationWarning:apps.*",
+]
+markers = [
+    "slow: tests that train or score the full research panel",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["data_pipeline/notebooks", "ml-models/notebooks", "*.ipynb"]
+
+[tool.ruff.lint]
+# F: pyflakes, E/W: style, I: import order, B: bugbear (blind except, mutable defaults),
+# UP: pyupgrade, S: bandit-lite security checks.
+select = ["F", "E", "W", "I", "B", "UP", "S"]
+ignore = [
+    "E501",     # line length is handled by the formatter, not the linter
+    "S101",     # asserts are the point in tests
+    "S105",     # credential-looking strings in tests/fixtures
+    "S106",
+    "B008",     # FastAPI Depends()/File() in defaults is the framework idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "B", "E402"]          # sys.path bootstrapping happens before imports
+"apps/backend/migrations/*" = ["B", "E", "W"]
+"ml-models/scripts/*" = ["E402"]        # project root is added to sys.path before imports
+"data_pipeline/scripts/download_external.py" = ["S310"]  # https scheme is enforced inline
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Header", "fastapi.Query"]

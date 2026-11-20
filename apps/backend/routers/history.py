@@ -4,24 +4,27 @@ import json
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
-from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
-from sqlalchemy.orm import Session
+from datetime import UTC, datetime, timedelta
+
 from core.auth import get_current_user
 from core.database import get_db
 from database.models import HistoryRecord
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from routers.manual_predictions import render_assessment_pdf
-from services.analysis_service import manual_evidence, historical_evidence
 from schemas.manual_prediction import ManualPredictionRequest
+from services import logging_service
+from services.analysis_service import historical_evidence, manual_evidence
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix='/history', tags=['Private assessment history'])
 HISTORY_DAYS = 90
 
 
 def now_utc():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def key_digest(key: str | None) -> str:
@@ -31,7 +34,12 @@ def key_digest(key: str | None) -> str:
 
 
 def purge_history(db, now=None):
-    return db.query(HistoryRecord).filter(HistoryRecord.created_at < (now or now_utc()) - timedelta(days=HISTORY_DAYS)).delete()
+    """Delete records past retention. Indexed on created_at."""
+    return (
+        db.query(HistoryRecord)
+        .filter(HistoryRecord.created_at < (now or now_utc()) - timedelta(days=HISTORY_DAYS))
+        .delete(synchronize_session=False)
+    )
 
 
 @router.post('/key')
@@ -53,7 +61,7 @@ class SaveHistorical(BaseModel):
 
 def save_evidence(evidence, key, db):
     digest = key_digest(key)
-    result = evidence['assessment']
+    result = dict(evidence['assessment'])
     result['data_source'] = evidence['source_note']
     if evidence['kind'] == 'historical':
         result['report_context'] = {'national': evidence['national'], 'trend': evidence['trend']}
@@ -65,9 +73,14 @@ def save_evidence(evidence, key, db):
         purge_history(db, now)
         db.add(record)
         db.commit()
-    except Exception as exc:
+    except SQLAlchemyError:
         db.rollback()
-        raise HTTPException(status_code=503, detail='Could not save history.') from exc
+        logging_service.exception('Could not persist history record')
+        raise HTTPException(status_code=503, detail='Could not save history.') from None
+    except (TypeError, ValueError):
+        db.rollback()
+        logging_service.exception('History record is not serialisable')
+        raise HTTPException(status_code=500, detail='The saved assessment could not be serialised.') from None
     return {'id': record.id, 'created_at': result['snapshot_created_at'], 'retention_days': HISTORY_DAYS}
 
 
@@ -102,9 +115,20 @@ def list_records(response: Response, x_history_key: str | None = Header(default=
     records = db.query(HistoryRecord).filter(HistoryRecord.history_key_hash == digest, HistoryRecord.created_at >= now_utc() - timedelta(days=HISTORY_DAYS)).order_by(HistoryRecord.created_at.desc()).limit(500).all()
     result = []
     for record in records:
-        snapshot = json.loads(record.snapshot_json)
-        result.append({'id': record.id, 'county': snapshot['county_name'], 'period': snapshot['period'],
-                       'score': snapshot['score'], 'band': snapshot['band'], 'created_at': record.created_at.isoformat() + 'Z'})
+        try:
+            snapshot = json.loads(record.snapshot_json)
+            result.append({
+                'id': record.id,
+                'county': snapshot['county_name'],
+                'period': snapshot['period'],
+                'score': snapshot['score'],
+                'band': snapshot['band'],
+                'extrapolated': bool(snapshot.get('extrapolated')),
+                'created_at': record.created_at.isoformat() + 'Z',
+            })
+        except (ValueError, KeyError):
+            # One damaged record must not hide the rest of the user's history.
+            logging_service.error('Skipping unreadable history record %s', record.id)
     return {'records': result, 'retention_days': HISTORY_DAYS, 'limit': 500}
 
 

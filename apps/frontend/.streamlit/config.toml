@@ -7,3 +7,24 @@ textColor = "#203b2a"
 
 [browser]
 gatherUsageStats = false
+
+# Security posture.
+#
+# enableCORS stays true and XSRF protection stays on. Setting
+# `server.enableCORS = false` makes the app answer any origin and accept a
+# WebSocket from anywhere, which is why it is not used here.
+#
+# `corsAllowedOrigins` and `allowedHosts` are environment-specific and are passed
+# at run time instead, from AGRISHIELD_ALLOWED_ORIGINS / AGRISHIELD_ALLOWED_HOSTS
+# (see the deployment runbook). Leaving them unset keeps the app reachable behind a
+# proxy whose hostname is not known at build time.
+
+[server]
+enableCORS = true
+enableXsrfProtection = true
+headless = true
+maxUploadSize = 10
+
+[client]
+showErrorDetails = "stacktrace"
+toolbarMode = "minimal"

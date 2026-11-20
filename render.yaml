@@ -1,25 +1,37 @@
+# Render blueprint: the backend only. The Streamlit dashboard is deployed separately.
+# Every secret referenced with `sync: false` must be set in the Render dashboard.
 services:
   - type: web
     name: agrishield-api
     runtime: python
     plan: free
     rootDir: .
-    buildCommand: pip install -r apps/backend/requirements.txt
-    startCommand: cd apps/backend && python init_db.py && alembic upgrade head && python seed_counties.py && uvicorn main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/v1/health
+    buildCommand: pip install -r apps/backend/requirements.txt -c constraints.txt
+    # Schema is applied once per deploy, before the new instance takes traffic.
+    preDeployCommand: cd apps/backend && alembic upgrade head && python seed_counties.py
+    startCommand: cd apps/backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    # Readiness, not liveness: a deploy with a missing model or unapplied migration fails.
+    healthCheckPath: /api/v1/health/ready
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.9
       - key: APP_ENV
         value: production
       - key: DEBUG
-        value: False
+        value: "False"
+      # Anonymous access is a prototype setting; production requires identity.
+      - key: PUBLIC_MODE
+        value: "False"
       - key: NVIDIA_MODEL
-        value: moonshotai/kimi-k3
+        value: meta/llama-3.3-70b-instruct
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CORS_ORIGINS
+        sync: false
       - key: SECRET_KEY
-        sync: false
+        generateValue: true
       - key: API_KEY
-        sync: false
+        generateValue: true
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL

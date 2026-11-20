@@ -1,13 +1,13 @@
 """Add capability-protected assessment snapshots.
 
 Revision ID: 20261120_snapshots
-Revises:
+Revises: 20261120_baseline
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = '20261120_snapshots'
-down_revision = None
+down_revision = '20261120_baseline'
 branch_labels = None
 depends_on = None
 
