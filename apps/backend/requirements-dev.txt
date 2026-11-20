@@ -1,9 +1,0 @@
-# Test and lint tooling. Never installed in the runtime image.
--r requirements-research.txt
-
-pytest>=8.0
-ruff>=0.6
-pip-audit>=2.7
-streamlit>=1.35.0   # the dashboard tests drive AppTest in-process
-requests>=2.32.0
-plotly>=5.22.0

@@ -1,5 +1,10 @@
-# Runtime dependencies for the API image. Research-only packages live in
-# requirements-research.txt, and the exact resolved set is pinned in constraints.txt.
+# Every dependency of apps/backend — runtime, tests, and research — in one file so a
+# single venv in this directory can serve the API, run the suite and retrain models.
+#
+#   python -m venv apps/backend/venv && source apps/backend/venv/bin/activate
+#   pip install -r apps/backend/requirements.txt -c constraints.txt
+#
+# The API image installs only the runtime subset; see apps/backend/Dockerfile.
 
 # ----- Web framework -----
 fastapi>=0.115.0
@@ -8,9 +13,10 @@ pydantic>=2.9.0
 pydantic-settings>=2.0.0
 python-multipart>=0.0.12
 httpx>=0.25.0
+starlette>=0.37.0
 
 # ----- Model inference -----
-# The artifact was fitted with this scikit-learn version; keep it exact.
+# The champion artifact was fitted with this scikit-learn version; keep it exact.
 scikit-learn==1.9.0
 joblib>=1.4.0
 lightgbm>=4.0.0
@@ -35,5 +41,25 @@ langgraph>=0.2.0
 pdfplumber>=0.11.0
 python-docx>=1.1.0
 
-# ----- PDF reports and utilities -----
+# ----- PDF reports -----
 reportlab>=4.2.0
+
+# ----- Data pipeline scripts and ml-models notebooks -----
+# The research code reads the same pandas/numpy/scikit-learn/lifecycle above and adds
+# these. They are not in the API image.
+matplotlib>=3.9.0,<4.0
+seaborn>=0.13.0
+openpyxl>=3.1.0          # KNBS .xlsx source in data_pipeline/data/external
+xgboost>=2.1.0           # compared against LightGBM in the research notebooks
+jupyter>=1.0.0           # to open data_pipeline/notebooks and ml-models/notebooks
+ipykernel>=6.29.0
+
+# ----- Test and lint tooling -----
+# The root tests/ drive the dashboard in-process (Streamlit's AppTest), so these two
+# frontend packages must be installed here as well; they are not runtime dependencies.
+streamlit>=1.35.0
+plotly>=5.22.0
+pytest>=8.0
+ruff>=0.6
+pip-audit>=2.7
+requests>=2.32.0

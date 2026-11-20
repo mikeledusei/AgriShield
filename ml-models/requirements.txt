@@ -1,16 +1,27 @@
-# Packages for the reproducible scripts in ml-models/scripts.
-pandas>=2.2.0
-numpy>=1.26.0
+# Every dependency of ml-models in one file.
+#
+#   python -m venv ml-models/venv && source ml-models/venv/bin/activate
+#   pip install -r ml-models/requirements.txt -c constraints.txt
+#
+# The notebooks read the processed tables in data_pipeline/data/processed/ by path, so
+# this venv does not need the data_pipeline package installed.
 
-# Models compared by the research experiment
+pandas>=2.2.0
+numpy>=1.26.0,<3.0
+
+# Models compared by the research notebooks
 scikit-learn>=1.4.0            # logistic regression, random forest, metrics
 xgboost>=2.1.0                 # one of the four compared models
 lightgbm>=4.3.0                # the champion artifact's library
 joblib>=1.4.0                  # artifact serialisation
 
-# SHAP contributions reported by the experiment
+# SHAP contributions reported by the experiments
 shap>=0.45.0
 
 # Figures written to ml-models/experiments/
 matplotlib>=3.9.0,<4.0
 seaborn>=0.13.0
+
+# Notebooks in ml-models/notebooks/
+jupyter>=1.0.0
+ipykernel>=6.29.0

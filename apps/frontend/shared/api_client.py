@@ -5,14 +5,49 @@ fail loudly at startup rather than after the first click with a confusing
 "connection refused" against a localhost default.
 """
 import os
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import requests
 
+FRONTEND_DIR = Path(__file__).resolve().parents[1]
+ENV_FILE = FRONTEND_DIR / ".env"
+
 
 class ConfigurationError(RuntimeError):
     """Raised when the dashboard cannot be pointed at the backend."""
+
+
+def _load_env_file() -> None:
+    """Read apps/frontend/.env into the process environment, once.
+
+    The backend reads its .env through pydantic-settings; the dashboard is a plain
+    script, so without this a .env sitting next to streamlit_app.py was silently
+    ignored and the app fell back to the localhost default — the most confusing
+    possible outcome, because the file looked authoritative.
+
+    Real environment variables still win: Streamlit and container orchestration set
+    those, and they must not be overwritten by a stray file.
+    """
+    if not ENV_FILE.exists():
+        return
+    try:
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        entry = line.strip()
+        if not entry or entry.startswith("#") or "=" not in entry:
+            continue
+        key, _, value = entry.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file()
 
 
 def _resolve_base_url(explicit: str | None) -> str:

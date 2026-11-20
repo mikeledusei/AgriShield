@@ -153,10 +153,10 @@ had was "the process is up" — which is true of a process that cannot score.
 
 ## Dependencies, CI and containers
 
-- **Requirements split by purpose**: `apps/backend/requirements.txt` (runtime),
-  `apps/backend/requirements-research.txt` (research scripts), and
-  `apps/backend/requirements-dev.txt` (test and lint tooling). The API image installs only
-  the runtime set.
+- **One `requirements.txt` per component** — see "Dependency and environment layout"
+  below. (Historically the backend had three: runtime, research and dev. The API image
+  still installs only the runtime subset, now filtered from the single file by the
+  Dockerfile.)
 - **Dependencies nothing imported removed**:
 
   | File | Removed | Evidence |
@@ -167,8 +167,9 @@ had was "the process is up" — which is true of a process that cannot score.
   | `ml-models/requirements.txt` | `jupyter`, `ipykernel`, `python-dotenv` | Same |
 
   Verified afterwards: every third-party import in `apps/`, `data_pipeline/scripts/` and
-  `ml-models/scripts/` is declared in a requirements file, and `clean_data.py`,
-  `train.py` and `prepare_maize_outcomes.py` still start.
+  the `ml-models` research scripts is declared in a requirements file, and
+  `clean_data.py` and `prepare_maize_outcomes.py` still start. (The `ml-models/scripts/`
+  copies of `train.py` were later removed in favour of the notebooks; see the entry below.)
 - **`constraints.txt`** pins the resolved set. All 26 pins were checked against PyPI and
   exist. `scikit-learn==1.9.0` is exact and commented because the artifact was fitted with it.
 - **CI** (`.github/workflows/ci.yml`): Python 3.12, install from constraints, `ruff check`,
@@ -234,6 +235,116 @@ clean).
 - **`docs/DATA_MODEL_CARD.md`** — added the accepted-input-distribution section.
 - **`apps/backend/.env.example`, `apps/frontend/.env.example`** — rewritten. The old files
   listed variables the code never read and omitted several it requires.
+
+## Dependency and environment layout
+
+One `requirements.txt` and one virtual environment per component. There is no environment
+at the repository root and no second requirements file anywhere.
+
+| Component | File | Environment |
+| --- | --- | --- |
+| `apps/backend` | `requirements.txt` | `apps/backend/venv` |
+| `apps/frontend` | `requirements.txt` | `apps/frontend/venv` |
+| `data_pipeline` | `requirements.txt` | `data_pipeline/venv` |
+| `ml-models` | `requirements.txt` | `ml-models/venv` |
+
+- **Merged and deleted** `apps/backend/requirements-dev.txt` and
+  `apps/backend/requirements-research.txt`. Their contents are now sections of
+  `apps/backend/requirements.txt`, so a single venv there can serve the API, run the
+  test suite and retrain models. `data_pipeline/requirements.txt` gained `joblib`,
+  `scikit-learn`, `jupyter` and `ipykernel`, which `ml-models` needs too; `ml-models`
+  gained `jupyter` and `ipykernel`. Every file is self-sufficient: the notebooks address
+  `data_pipeline/data/processed/` by path and never import the `data_pipeline` package,
+  so per-component venvs need no cross-installs. The one exception is `data_pipeline/scripts/experiment.py`,
+  which is imported from the repository root; it resolves because nothing else is needed
+  on `sys.path` beyond the repo itself.
+- **The API image stays lean** without a second file: `apps/backend/Dockerfile` filters
+  the research and test blocks out of `requirements.txt` with `awk` before installing, so
+  `jupyter`, `xgboost`, `seaborn` and `pytest` never enter the image.
+- **CI installs all four** into one interpreter, because the root `tests/` import the
+  backend, the dashboard, `data_pipeline` and the research libraries. Locally they are
+  separate venvs.
+- **`.env.example` files completed.** `apps/backend/.env.example` now documents all 27
+  settings including `API_KEY`, the real `SECRET_KEY`/`API_KEY` defaults, and
+  `MODEL_PATH`, and separates the "required in production" group that
+  `validate_production_safety` actually enforces. `apps/frontend/.env.example` documents
+  `BACKEND_URL` (a supported alias) and states that the two
+  `AGRISHIELD_ALLOWED_*` variables are read by the Dockerfile's `streamlit` flags, not by
+  the application code.
+
+## Data pipeline is notebook-only, with data acquisition and documented EDA
+
+- **`data_pipeline/scripts/` removed** (10 modules). The pipeline is now four notebooks in
+  `data_pipeline/notebooks/`. Logic that only existed in scripts was ported, not dropped:
+  the panel builder and its validation from `clean_data.py`/`experiment.py` now live in
+  `01_data_cleaning.ipynb` as explicit cells, and the archived originals remain readable in
+  `data_pipeline/legacy_reference/`.
+- **`00a_raw_data_acquisition.ipynb` is new.** It downloads every raw source into
+  `data/raw/`, verifies it, and writes `MANIFEST.json` with sizes and SHA-256 hashes:
+  NDVI and CHIRPS from HDX, monthly temperature / rainfall / soil wetness / runoff per
+  county from the NASA POWER point API (no key required), FAOSTAT bulk crops, and the
+  2019 census household table. The last two print manual instructions when they cannot be
+  fetched automatically. County centroids are derived from the tracked GeoJSON rather than
+  hard-coded, and reconciled against the crosswalk with an assertion — the GeoJSON spells
+  three counties with hyphens (`Elgeyo-Marakwet`) while the crosswalk and every processed
+  table use spaces, so a silent mismatch would have quietly produced a 44-county pipeline.
+- **`02_eda.ipynb` rewritten** to produce seven charts, each with its own `.md` explanation
+  and a combined `CHART_EXPLANATIONS.md` plus `figures.json`. Every chart is saved through a
+  single helper that requires the explanation text, so a figure cannot be written without
+  one. The explanations state the reading, the modelling consequence, and the limit.
+- **`tests/test_pipeline.py` rewritten.** It previously imported the scripts. It now asserts
+  against the notebook files and the committed outputs: the panel is 6,204 rows with 132
+  months per county and no gaps, imputation is flagged (132 soil-moisture cells), the ML
+  base table satisfies the champion's column contract, every EDA figure has an explanation
+  of at least 200 characters that references its own file, and only the acquisition
+  notebook makes network calls. **Coverage is genuinely lower than before** — the old suite
+  unit-tested `load_panel()` and `build_experiment()` directly; a regression in that logic
+  now surfaces as a failed notebook run rather than a red test.
+- **Consequence to be explicit about:** the tests that verified `download_external.py`'s
+  MD5 checking and `save_eda.py`'s no-overwrite behaviour were removed with those scripts.
+  The acquisition notebook verifies hashes, but that verification is now asserted only by
+  reading the notebook, not by executing it.
+
+## Notebook-only research workflow
+
+`ml-models/scripts/` has been **removed** (four files: `train.py`, `evaluate.py`,
+`predict.py`, `maize_outcome_experiment.py`). The research workflow is now the notebook
+sequence in `ml-models/notebooks/`.
+
+- **`00_data_loading.ipynb` no longer needs files that do not exist.** It read
+  `master_cleaned_2015_2025.csv`, plus `Crop_Production_WIDE/LONG_FINAL.csv` in its
+  inventory cell. None of the three is tracked in Git or produced by any committed
+  script, so the notebook could not run from a clean clone. It now joins
+  `NDVI_FINAL.csv` + `Weather_FINAL.csv` + `Demographic_Crop_Activity_FINAL.csv`
+  directly and asserts the row count and grain after joining. The rebuild reproduces
+  `ml_base_2015_2025.csv` exactly: **6,204 rows × 15 columns**, 47 counties, 132 months
+  each, 0 nulls — confirmed by executing all six notebooks in order in a fresh clone.
+- **The maize yield experiment has no notebook equivalent.** The notebooks model the
+  NDVI drought-risk target only. The script is archived at
+  `ml-models/legacy_reference/maize_outcome_experiment.py.txt` so the results under
+  `ml-models/research_runs/maize_2026_11_20/` stay reproducible.
+- **Two tests removed** with the scripts they exercised:
+  `test_end_to_end_experiment_does_not_promote_model` and
+  `test_maize_experiment_holdout_and_baseline_are_separate`. The first asserted that a
+  research run never promotes itself to the deployed champion; that guarantee now rests
+  on notebook discipline instead, because `05_model_comparison.ipynb` **does** copy its
+  models into `apps/backend/ml_artifacts/`.
+- **Pointers updated** so nothing dangles: `ci.yml` `compileall` target, the
+  `pyproject.toml` per-file ruff ignore, `README.md` (research section rewritten as a
+  notebook table), `docs/DATA_MODEL_CARD.md`, both requirements headers, and
+  `ml-models/research_runs/maize_2026_11_20/README.md`.
+
+## Local development
+
+- **`apps/frontend/.env` is now read** (`shared/api_client.py`). The backend reads its
+  `.env` through pydantic-settings, but the dashboard is a plain script and only read
+  real environment variables, so a `.env` beside `streamlit_app.py` was silently ignored
+  and the app fell back to the localhost default while the file looked authoritative. A
+  real environment variable still takes precedence, so containers and Streamlit are
+  unaffected.
+- **README quickstart rewritten** into two numbered terminals with the readiness check
+  inline. `--reload` added for backend development, the optional `.env` copy documented,
+  and the Windows activate path noted.
 
 ## Known limitations
 
