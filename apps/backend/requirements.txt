@@ -1,70 +1,73 @@
 # Every dependency of apps/backend — runtime, tests, and research — in one file so a
 # single venv in this directory can serve the API, run the suite and retrain models.
 #
-#   # Recommended: installs all four venvs with retries, pip upgrade and constraints.
+# Python 3.12.9 compatible. All pins resolved against PyPI for Python 3.12.
+#
+#   # Recommended: installs all four venvs with retries, pip upgrade.
 #   ./scripts/install_venvs.sh
 #
 #   # Or manually, for this directory only:
-#   python -m venv apps/backend/venv && source apps/backend/venv/bin/activate
+#   python3.12 -m venv apps/backend/venv && source apps/backend/venv/bin/activate
 #   pip install --upgrade pip
 #   pip install --retries 10 --timeout 300 -r apps/backend/requirements.txt
 #
 # The API image installs only the runtime subset; see apps/backend/Dockerfile.
 
 # ----- Web framework -----
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
-pydantic>=2.9.0
-pydantic-settings>=2.0.0
-python-multipart>=0.0.12
-httpx>=0.25.0
-starlette>=0.37.0
+fastapi==0.165.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.4
+pydantic-settings==2.16.3
+python-multipart==0.0.34
+httpx==0.28.1
+starlette==1.10.0
 
 # ----- Model inference -----
 # The champion artifact was fitted with this scikit-learn version; keep it exact.
 scikit-learn==1.9.0
-joblib>=1.4.0
-lightgbm>=4.0.0
-shap>=0.46.0
-pandas>=2.2.0
-numpy>=1.26.0,<3.0.0
+joblib==1.6.0
+lightgbm==4.7.0
+shap==0.51.0
+pandas==3.1.1
+numpy==2.4.6
 
 # ----- Database (PostgreSQL/Neon, SQLite locally) -----
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.9
-alembic>=1.12.0
+sqlalchemy==2.1.9
+psycopg2-binary==2.9.13
+alembic==1.20.1
 
 # ----- Identity -----
-supabase>=2.0.0
+supabase==2.34.1
 
 # ----- Gria AI agent (NVIDIA NIM) -----
-langchain-core>=1.4.7
-langchain-nvidia-ai-endpoints>=1.4.3
-langgraph>=0.2.0
+langchain-core==1.8.4
+langchain-nvidia-ai-endpoints==1.5.0
+langgraph==1.2.24
 
 # ----- Document context extraction -----
-pdfplumber>=0.11.0
-python-docx>=1.1.0
+pdfplumber==0.11.10
+python-docx==1.2.0
 
 # ----- PDF reports -----
-reportlab>=4.2.0
+reportlab==5.1.0
 
 # ----- Data pipeline scripts and ml-models notebooks -----
 # The research code reads the same pandas/numpy/scikit-learn/lifecycle above and adds
 # these. They are not in the API image.
-matplotlib>=3.9.0,<4.0
-seaborn>=0.13.0
-openpyxl>=3.1.0          # KNBS .xlsx source in data_pipeline/data/external
-xgboost>=2.1.0           # compared against LightGBM in the research notebooks
-jupyter>=1.0.0           # to open data_pipeline/notebooks and ml-models/notebooks
-ipykernel>=6.29.0
+matplotlib==3.11.2
+seaborn==0.13.2
+openpyxl==3.1.5          # KNBS .xlsx source in data_pipeline/data/external
+xgboost==3.2.0           # compared against LightGBM in the research notebooks
+ipykernel==7.4.0         # to run data_pipeline/notebooks and ml-models/notebooks
+jupyter-client==8.10.0   # notebook client
+nbformat==5.11.1         # notebook format
 
 # ----- Test and lint tooling -----
 # The root tests/ drive the dashboard in-process (Streamlit's AppTest), so these two
 # frontend packages must be installed here as well; they are not runtime dependencies.
-streamlit>=1.35.0
-plotly>=5.22.0
-pytest>=8.0
-ruff>=0.6
-pip-audit>=2.7
-requests>=2.32.0
+streamlit==1.67.0
+plotly==7.1.0
+pytest==9.2.0
+ruff==0.17.6
+pip-audit==2.10.1
+requests==2.34.2
