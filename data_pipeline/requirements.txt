@@ -1,30 +1,33 @@
 # Every dependency of data_pipeline in one file.
 #
-#   # Recommended: installs all four venvs with retries, pip upgrade and constraints.
+# Python 3.12.9 compatible. All pins resolved against PyPI for Python 3.12.
+#
+#   # Recommended: installs all four venvs with retries, pip upgrade.
 #   ./scripts/install_venvs.sh
 #
 #   # Or manually, for this directory only:
-#   python -m venv data_pipeline/venv && source data_pipeline/venv/bin/activate
+#   python3.12 -m venv data_pipeline/venv && source data_pipeline/venv/bin/activate
 #   pip install --upgrade pip
 #   pip install --retries 10 --timeout 300 -r data_pipeline/requirements.txt
 #
 # The GeoJSON is read with the standard `json` module, so no geospatial stack is needed.
 
-pandas>=2.2.0
-numpy>=1.26.0,<3.0
-joblib>=1.4.0
-scikit-learn>=1.4.0
+pandas==3.1.1
+numpy==2.4.6
+joblib==1.6.0
+scikit-learn==1.9.1
 
 # Excel source tables (data_pipeline/data/external/knbs_candidate/*.xlsx)
-openpyxl>=3.1.0
+openpyxl==3.1.5
 
 # External source downloads (NASA POWER, FAOSTAT, HDX mirrors)
-requests>=2.32.0
+requests==2.34.2
 
 # Figures and exploratory analysis used by the scripts and notebooks
-matplotlib>=3.9.0,<4.0
-seaborn>=0.13.0
+matplotlib==3.11.2
+seaborn==0.13.2
 
 # Notebooks in data_pipeline/notebooks/
-jupyter>=1.0.0
-ipykernel>=6.29.0
+ipykernel==7.4.0
+jupyter-client==8.10.0
+nbformat==5.11.1

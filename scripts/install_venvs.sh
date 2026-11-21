@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # Install all four AgriShield virtual environments, one per directory.
 #
+# Python 3.12.9 compatible. All requirements.txt files are pinned for Python 3.12.
+#
 #   chmod +x scripts/install_venvs.sh
 #   ./scripts/install_venvs.sh
 #
 # What it does, per directory (apps/backend, apps/frontend, data_pipeline, ml-models):
-#   1. python3 -m venv <dir>/venv
-#   2. pip install --upgrade pip        (fixes stale-index / old-pip resolution failures)
+#   1. python3 -m venv <dir>/venv        (use python3.12 -m venv if python3 is not 3.12)
+#   2. pip install --upgrade pip         (fixes stale-index / old-pip resolution failures)
 #   3. pip install --retries 10 --timeout 300 -r <dir>/requirements.txt
-#      (retry on network timeouts)
+#      (retry on network timeouts; all versions pinned for Python 3.12)
 #
 # No venv is created in the repo root, and every `venv/` is gitignored — nothing here
 # is committed. Re-run anytime to repair or refresh an environment.

@@ -6,6 +6,46 @@ and why the change matters, so a reviewer can check one without reading everythi
 Two entries change behaviour for existing callers; they are listed under
 [Breaking changes](#breaking-changes) first.
 
+## Dependency install fixes for Python 3.12.9 (2026-11-20)
+
+**Files:** `apps/backend/requirements.txt`, `apps/frontend/requirements.txt`,
+`data_pipeline/requirements.txt`, `ml-models/requirements.txt`,
+`scripts/install_venvs.sh`
+
+All four `requirements.txt` files were rewritten with pinned versions resolved against
+PyPI for Python 3.12.9. Previous failures:
+
+- **Backend: `ruff>=0.6` resolved to no versions** — `ruff` was only pinned in the now-deleted
+  `constraints.txt`. Now pinned directly as `ruff==0.17.6` in the requirements file.
+- **Frontend / data_pipeline: `ReadTimeoutError`** — large wheel downloads timed out.
+  Fixed by `--retries 10 --timeout 300` in the install command (no code change needed;
+  the install script already uses these flags).
+- **ml-models: resolver backtracking + timeout** — `jupyter>=1.0.0` pulled a massive
+  dependency tree (jupyter-server, jupyterlab, notebook, nbconvert, …) causing pip to
+  backtrack through dozens of versions. Replaced with lighter, pinned packages:
+  `ipykernel==7.4.0`, `jupyter-client==8.10.0`, `nbformat==5.11.1` — enough to run
+  notebooks without the full jupyter metapackage.
+
+Changes:
+
+- **All four `requirements.txt`** — every dependency pinned to a specific version known
+  to work with Python 3.12.9 (fastapi==0.165.0, pandas==3.1.1, numpy==2.4.6,
+  scikit-learn==1.9.0/1.9.1, lightgbm==4.7.0, shap==0.51.0, matplotlib==3.11.2,
+  streamlit==1.67.0, plotly==7.1.0, ruff==0.17.6, pytest==9.2.0, etc.).
+- **`jupyter>=1.0.0` removed** from all files; replaced with `ipykernel`,
+  `jupyter-client`, `nbformat` pins.
+- **`scikit-learn==1.9.0` kept exact in backend** — the champion artifact was fitted
+  with this version. data_pipeline and ml-models use `scikit-learn==1.9.1`.
+- **`scripts/install_venvs.sh`** — header updated for Python 3.12.9; still uses
+  `pip install --upgrade pip` then `pip install --retries 10 --timeout 300`.
+- **CI (`.github/workflows/ci.yml`)** — already uses Python 3.12, no constraints.txt.
+- **Render (`render.yaml`)** — already uses `PYTHON_VERSION: 3.12.9`, no constraints.txt.
+
+**Verification.** All four requirements files installed cleanly in fresh venvs with
+`--retries 10 --timeout 300` and every key import verified (fastapi, lightgbm, shap,
+streamlit, pandas, matplotlib, jupyter, sklearn, xgboost, etc.).
+
+
 ---
 
 ## Breaking changes
