@@ -1,0 +1,32 @@
+[
+  {
+    "file": "figures/01_coverage_by_county.png",
+    "explanation": "01_coverage_by_county.md",
+    "title": "Coverage: months per county"
+  },
+  {
+    "file": "figures/02_seasonality_rainfall_ndvi.png",
+    "explanation": "02_seasonality_rainfall_ndvi.md",
+    "title": "Rainfall and NDVI by month"
+  },
+  {
+    "file": "figures/03_annual_ndvi_rainfall.png",
+    "explanation": "03_annual_ndvi_rainfall.md",
+    "title": "Annual NDVI and rainfall"
+  },
+  {
+    "file": "figures/04_county_ndvi_ranking.png",
+    "explanation": "04_county_ndvi_ranking.md",
+    "title": "Counties ranked by NDVI"
+  },
+  {
+    "file": "figures/05_distributions.png",
+    "explanation": "05_distributions.md",
+    "title": "Distributions"
+  },
+  {
+    "file": "figures/06_correlation_matrix.png",
+    "explanation": "06_correlation_matrix.md",
+    "title": "Correlation matrix"
+  }
+]
