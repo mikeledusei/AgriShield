@@ -13,14 +13,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY constraints.txt /app/constraints.txt
 COPY apps/backend/requirements.txt /app/apps/backend/requirements.txt
 # requirements.txt covers runtime, research and test tooling so one venv serves local
 # development. The image installs only the runtime deps: filter out the research and
 # tooling blocks marked by "# ----- Data pipeline" and "# ----- Test and lint".
 RUN awk '/^# ----- (Data pipeline|Test and lint)/{skip=1} /^# ----- /&&!/^# ----- (Data pipeline|Test and lint)/{skip=0} !skip' \
       /app/apps/backend/requirements.txt > /tmp/runtime.txt \
-    && pip install -r /tmp/runtime.txt -c /app/constraints.txt \
+    && pip install -r /tmp/runtime.txt \
     && rm /tmp/runtime.txt
 
 COPY apps/backend /app/apps/backend

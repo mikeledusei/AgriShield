@@ -31,7 +31,7 @@ per component.
 # Run from the repository root. Windows: use <dir>\venv\Scripts\activate
 for d in apps/backend apps/frontend data_pipeline ml-models; do
   python -m venv "$d/venv"
-  "$d/venv/bin/pip" install -r "$d/requirements.txt" -c constraints.txt
+  "$d/venv/bin/pip" install -r "$d/requirements.txt"
 done
 ```
 

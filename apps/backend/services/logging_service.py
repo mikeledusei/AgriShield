@@ -13,7 +13,10 @@ from core.config import settings
 #: Bound per request by ``RequestContextMiddleware``.
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
-LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+# ``request_id`` is supplied by ``RequestIdFilter`` below, which runs on every record
+# passing through the handler. Without it in the format the value was computed and then
+# thrown away, so a user-reported error could not be traced back to its request.
+LOG_FORMAT = "%(asctime)s | %(levelname)-8s | rid=%(request_id)s | %(name)s | %(message)s"
 
 
 class RequestIdFilter(logging.Filter):

@@ -108,7 +108,16 @@ def normalize_county_name(raw_name: str | None) -> str:
 
 
 def ensure_counties_seeded(db: Session) -> None:
-    """Insert any missing counties. Idempotent; never creates tables."""
+    """Insert any missing counties. Idempotent; never creates tables.
+
+    This runs on a request path as a repair step, so it must not raise: a caller that is
+    mid-query should still get its own answer. It must not be *silent* either — a failed
+    seed used to disappear entirely, which left a deployment reporting "ready" while
+    county lookups returned nothing. The failure is logged with its traceback so it is
+    visible in the deploy log and can be alerted on.
+    """
+    from services import logging_service
+
     try:
         count = db.query(models.County).count()
         if count >= 47:
@@ -129,6 +138,10 @@ def ensure_counties_seeded(db: Session) -> None:
             db.commit()
     except Exception:
         db.rollback()
+        # Never swallow: a failed county seed degrades lookups, reports and history.
+        logging_service.exception(
+            "ensure_counties_seeded failed; county lookups may return nothing."
+        )
 
 
 def seed():

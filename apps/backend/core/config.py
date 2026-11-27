@@ -64,6 +64,16 @@ class Settings(BaseSettings):
 
     NVIDIA_API_KEY: str = ""
     NVIDIA_MODEL: str = "meta/llama-3.3-70b-instruct"
+    # A high-reasoning model can take tens of seconds. Without a bound, one slow call
+    # holds a limited threadpool worker and starves unrelated endpoints, so the request
+    # is abandoned and the caller gets the labelled deterministic summary instead.
+    LLM_TIMEOUT_SECONDS: int = 60
+
+    # Requests per minute allowed against the AI endpoints (Gria chat/analyze), keyed by
+    # identity (or client address in PUBLIC_MODE). 0 disables the limiter, which is the
+    # local/test default; production sets it explicitly. These endpoints are the only
+    # ones that make a paid outbound call and can score all 47 counties per request.
+    AI_RATE_LIMIT_PER_MINUTE: int = 0
 
     MODEL_PATH: Path = BACKEND_DIR / "ml_artifacts" / "lightgbm_agrishield_v1.joblib"
     # Loaded artifacts must match the hash recorded with the training ranges.
