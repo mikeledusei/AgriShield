@@ -59,8 +59,8 @@ class Settings(BaseSettings):
 
     NVIDIA_API_KEY: str = ""
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
-    # llama-3.3-70b EOL 2026-08-26 410, llama-3.1-405b deprecated 404 → use active agentic model
-    NVIDIA_MODEL: str = "meta/llama-3.1-70b-instruct"
+    # All 2024-era models (llama-3.3/3.1/mistral-large-2/nemotron 2026-11-15) are 410 Gone today → use active Llama-4/Qwen3 generation
+    NVIDIA_MODEL: str = "meta/llama-4-maverick-17b-128e-instruct"
     LLM_TIMEOUT_SECONDS: int = 60
     AI_RATE_LIMIT_PER_MINUTE: int = 0
 

@@ -10,10 +10,12 @@ from services import logging_service
 from services.analysis_service import explain_evidence, historical_evidence
 
 FALLBACK_MODELS = [
-    "meta/llama-3.1-70b-instruct",
-    "meta/llama-3.1-8b-instruct",
-    "mistralai/mistral-large-2-instruct",
-    "nvidia/llama-3.1-nemotron-70b-instruct",
+    # All 2024 batch is 410 today — only Llama-4 / Qwen3 / Nemotron-nano generation remains
+    "meta/llama-4-scout-17b-16e-instruct",
+    "nvidia/llama-3.1-nemotron-nano-8b-v1",
+    "qwen/qwen3-235b-a22b",
+    "mistralai/mistral-nemo",
+    "meta/llama-3.1-70b-instruct",  # keep last as legacy attempt (likely 410 but harmless)
 ]
 
 def _make_llm(model_name: str):
