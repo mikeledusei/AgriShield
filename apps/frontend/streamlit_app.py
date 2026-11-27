@@ -101,9 +101,10 @@ def show_shap(explanation, key):
 
 
 def show_analysis(analysis):
-    st.markdown('#### Gria’s explanation' if analysis['mode'] == 'ai' else '#### Evidence summary')
+    is_ai = analysis.get('mode') == 'ai'
+    st.markdown('#### 🤖 Gria’s explanation' if is_ai else '#### 🌱 Gria’s summary (offline-ready)')
     st.markdown(analysis['text'])
-    st.caption('AI-generated text can contain mistakes; verify decisions with a local expert.' if analysis['mode'] == 'ai' else 'Gria AI is unavailable. This is a factual backend summary, not an AI-generated analysis.')
+    st.caption('AI-generated text can contain mistakes; verify decisions with a local expert.' if is_ai else 'Generated locally from your score + SHAP — no external AI call needed. Verify with a local expert.')
 
 
 def assessment_payload(result, schema):
@@ -211,12 +212,9 @@ with st.sidebar:
     health = api(client.health)
     if health:
         if health.get('model_loaded'):
-            # Show gria status inline when known
-            gria_note = ""
-            if health.get('gria_available') is True:
-                gria_note = " · Gria AI ready"
-            elif health.get('gria_available') is False:
-                gria_note = " · Gria summary mode"
+            gria_note = " · Gria ready"
+            if health.get('gria_available') is False:
+                gria_note = " · Gria ready (local)"
             st.success(f"Backend connected · model ready{gria_note}")
         else:
             st.warning('Backend connected · model unavailable')

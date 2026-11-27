@@ -102,48 +102,80 @@ def manual_evidence(inputs, expected_model_sha256: str, expected_probability: fl
     }
 
 
+def _local_gria_text(evidence: dict) -> str:
+    """Deterministic farmer-friendly explanation that works without any LLM key."""
+    result = evidence["assessment"]
+    explanation = result.get("explanation")
+    band = result.get("band", "")
+    score = result.get("score", 0)
+    county = result.get("county_name", "the county")
+    period = result.get("period", "")
+    feats = result.get("features", {})
+
+    # Top drivers
+    factors = explanation["values"] if explanation else []
+    pos = [f for f in factors if f.get("contribution", 0) > 0.05][:3]
+    neg = [f for f in factors if f.get("contribution", 0) < -0.05][:3]
+
+    intro = f"**What the score says — and what it doesn't**\n\nThis is a historical model score for **{period}** in **{county} County** from `{result.get('model_used','xgboost_v1')}`. The score is **{score}**, in the **\"{band}\"** band (0=low stress, 100=high stress). It is a vegetation-greenness proxy learned from past data — it is **not live data, not a forecast, not an official warning, and not a confirmed crop or forage loss**. The model's raw output is {result.get('model_probability',0):.4f} (not a calibrated probability).\n\n"
+    # Snapshot of key inputs
+    snap = []
+    for k in ["ndvi_lag1","rainfall_mm","rainfall_anomaly","soil_moisture","temp_mean_c","forage_dryness_index"]:
+        if k in feats:
+            label = k.replace("_"," ")
+            snap.append(f"{label} {feats[k]:g}")
+    snapshot = f"**What the model saw:** {', '.join(snap)}. {evidence.get('source_note','')}\n\n" if snap else ""
+
+    shap_part = ""
+    if pos or neg:
+        if pos:
+            shap_part += "**What pushed the score up:** " + "; ".join([f"**{x['label']} ({x['value']:g}, SHAP {x['contribution']:+.2f})**" for x in pos]) + ". "
+        if neg:
+            shap_part += "**What pulled it down:** " + "; ".join([f"**{x['label']} ({x['value']:g}, SHAP {x['contribution']:+.2f})**" for x in neg]) + ". "
+        shap_part += "These are **model associations, not proven causes** on your farm.\n\n"
+    else:
+        # still explain even without SHAP
+        shap_part = "The model saw inputs near its baseline; no single factor dominated. These are associations, not causes.\n\n" if not factors else ""
+
+    trend_part = ""
+    if evidence.get("trend"):
+        first, last = evidence["trend"][0], evidence["trend"][-1]
+        trend_part = f"**Trend and map context:** Trend from {first['period']} ({first['score']}/100) to {last['period']} ({last['score']}/100). This is not a forecast. "
+        if evidence.get("national"):
+            nat = evidence["national"]
+            trend_part += f"National that month: {nat['counties_available']} counties scored, average {nat['mean_score']}/100.\n\n"
+        else:
+            trend_part += "\n\n"
+    else:
+        # manual evidence has no trend/national — say so honestly
+        trend_part = "**Trend and map context:** No national/trend data for a user-provided assessment (it's your own inputs, not a historical row), so I won't guess a trend.\n\n"
+
+    if result.get("extrapolated"):
+        trend_part += "⚠️ **At least one input is outside the model's training range** — this score is an extrapolation and should not be used for decisions.\n\n"
+
+    actions = (
+        "**Low-regret steps you can take now:**\n"
+        "1. **Walk your fields/pastures** — check crop vigour, leaf colour, ground cover with your own eyes today.\n"
+        "2. **Check official advisories** — Kenya Meteorological Department seasonal outlook + county agriculture bulletins.\n"
+        "3. **Talk to your local extension / livestock officer** — they can verify ground conditions and tailor advice.\n\n"
+        "Don't make costly or irreversible decisions (selling livestock, abandoning a crop) on this proxy score alone.\n"
+    )
+
+    return intro + snapshot + shap_part + trend_part + actions
+
+
 def explain_evidence(evidence: dict, use_ai: bool = True) -> dict:
-    """Generate AI text when configured; otherwise return a transparent factual summary."""
+    """Generate AI text when configured; otherwise return a high-quality local Gria summary."""
     from agents import gria_agent
     from langchain_core.messages import AIMessage, HumanMessage
 
-    result = evidence["assessment"]
-    explanation = result.get("explanation")
-    factors = explanation["values"][:3] if explanation else []
-    lines = []
-    for factor in factors:
-        direction = (
-            "raised" if factor["contribution"] > 0
-            else "lowered" if factor["contribution"] < 0
-            else "did not change"
-        )
-        lines.append(f"{factor['label']} {direction} the model output relative to its baseline")
-    text = (
-        f"For {result['county_name']} in {result['period']}, the model scored the vegetation-stress proxy "
-        f"{result['score']} out of 100 ({result['band']}). " + evidence["source_note"] + "\n\n"
-    )
-    if lines:
-        text += "The largest model contributions: " + "; ".join(lines) + ". These are model associations, not causes.\n\n"
-    else:
-        text += "Model contributions are unavailable for this assessment.\n\n"
-    if result.get("extrapolated"):
-        text += (
-            "At least one input is outside the model's training range, so this score is an extrapolation "
-            "and should not be acted on.\n\n"
-        )
-    if evidence["trend"]:
-        first, last = evidence["trend"][0], evidence["trend"][-1]
-        text += (
-            f"The displayed history runs from {first['period']} ({first['score']}/100) to "
-            f"{last['period']} ({last['score']}/100). This is not a forecast.\n\n"
-        )
-    text += (
-        "Before acting, check current field, water and pasture conditions and current official advisories; "
-        "discuss observations with a local agricultural or livestock extension officer. "
-        "Do not treat this score as confirmed crop loss, forage shortage, or an official alert."
-    )
-    fallback = {"mode": "summary", "text": text}
+    # Always build a good local version first — this is what we return if AI is off or fails
+    local_text = _local_gria_text(evidence)
+    fallback = {"mode": "summary", "text": local_text}
+
     if not use_ai or gria_agent.agent_executor is None:
+        # Still return a successful response — frontend will show it as Gria, not as an error
+        # Mark mode as 'summary' so UI can show the right badge, but it's not a failure
         return fallback
 
     prompt = (
