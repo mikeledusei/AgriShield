@@ -211,9 +211,17 @@ with st.sidebar:
     health = api(client.health)
     if health:
         if health.get('model_loaded'):
-            st.success('Backend connected · model ready')
+            # Show gria status inline when known
+            gria_note = ""
+            if health.get('gria_available') is True:
+                gria_note = " · Gria AI ready"
+            elif health.get('gria_available') is False:
+                gria_note = " · Gria summary mode"
+            st.success(f"Backend connected · model ready{gria_note}")
         else:
             st.warning('Backend connected · model unavailable')
+            if health.get('problems'):
+                st.caption(" · ".join(health['problems'][:2]))
     saved_reports = st.session_state.get('saved_reports', [])
     if saved_reports:
         st.divider()

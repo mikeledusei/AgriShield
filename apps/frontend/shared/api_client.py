@@ -132,6 +132,9 @@ class AgriShieldClient:
     def health(self):
         return self._request("GET", "/health")
 
+    def ready(self):
+        return self._request("GET", "/health/ready")
+
     def schema(self):
         return self._request("GET", "/predictions/input-schema")
 

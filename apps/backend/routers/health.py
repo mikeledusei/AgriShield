@@ -14,10 +14,29 @@ router = APIRouter(tags=['Health'])
 
 @router.get('/health', response_model=HealthResponse)
 def health_check():
-    """Liveness: the process is up. Does not touch the model or the database."""
-    return HealthResponse(status='ok', services={'process': 'running'},
-                          model_loaded=False, model_name='unchecked',
-                          gria_available=False, database_connected=False)
+    """Liveness: fast check that also reports model/db/gria status.
+
+    Kept cheap — no smoke inference, just cached state — so dashboards polling
+    every few seconds see 'model unavailable' immediately instead of forever.
+    Use /health/ready for the full 503-gated probe (smoke test + Neon ping).
+    """
+    from services.health_service import build_health_report
+    try:
+        report = build_health_report()
+        return HealthResponse(
+            status='ok',
+            services=report.services,
+            model_loaded=report.services.get('ml_engine') not in (None, 'unavailable'),
+            model_name=report.services.get('ml_engine', 'unavailable'),
+            gria_available=report.services.get('gria_ai') == 'configured',
+            database_connected=report.services.get('database') == 'connected (Neon)',
+            problems=report.problems,
+        )
+    except Exception:
+        # Liveness must never 500 — degraded report is still useful
+        return HealthResponse(status='ok', services={'process': 'running'},
+                              model_loaded=False, model_name='unchecked',
+                              gria_available=False, database_connected=False)
 
 
 @router.get('/health/ready', response_model=HealthResponse, responses={503: {'model': HealthResponse}})
