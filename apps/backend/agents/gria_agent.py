@@ -16,9 +16,13 @@ if (
     and settings.NVIDIA_API_KEY != "your-nvidia-api-key"
 ):
     try:
+        # NVIDIA_BASE_URL was missing — default is https://integrate.api.nvidia.com/v1
+        # Honors the env var you just added so hosted NIM works without code changes.
+        base_url = settings.NVIDIA_BASE_URL.strip().rstrip("/") or "https://integrate.api.nvidia.com/v1"
         llm = ChatNVIDIA(
             model=settings.NVIDIA_MODEL,
             api_key=settings.NVIDIA_API_KEY,
+            base_url=base_url,
             temperature=0.2,
             max_tokens=4096,
             # Bound the provider call: an unbounded high-reasoning request holds a

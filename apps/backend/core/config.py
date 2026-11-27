@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     NVIDIA_API_KEY: str = ""
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
     NVIDIA_MODEL: str = "meta/llama-3.3-70b-instruct"
     LLM_TIMEOUT_SECONDS: int = 60
     AI_RATE_LIMIT_PER_MINUTE: int = 0
