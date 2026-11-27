@@ -29,7 +29,7 @@ services:
       - key: PUBLIC_MODE
         value: "True"
       - key: NVIDIA_MODEL
-        value: meta/llama-4-maverick-17b-128e-instruct
+        value: mistralai/mistral-large-4-1t-a52b
       # --- Must be set in Render Dashboard (sync: false) ---
       - key: CORS_ORIGINS
         sync: false
