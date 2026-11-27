@@ -77,8 +77,19 @@ def score_vector(county: str, period: str, vector: dict) -> dict:
         raise HTTPException(status_code=503, detail="The model could not evaluate these inputs. No substitute score has been generated.") from exc
     contributions = None
     try:
-        if hasattr(engine.model, 'booster_'):
-            raw = engine.model.booster_.predict(frame, pred_contrib=True)[0]
+        # XGBClassifier (sklearn wrapper) exposes the booster via get_booster(), not booster_
+        booster = None
+        if hasattr(engine.model, 'get_booster'):
+            try:
+                booster = engine.model.get_booster()
+            except Exception:
+                booster = None
+        elif hasattr(engine.model, 'booster_'):
+            booster = engine.model.booster_
+        if booster is not None:
+            import xgboost as xgb  # local import to keep cold-start light
+            dmat = xgb.DMatrix(frame, enable_categorical=False)
+            raw = booster.predict(dmat, pred_contribs=True)[0]
             if len(raw) == len(engine.feature_cols) + 1 and all(math.isfinite(float(v)) for v in raw):
                 labels = {item['key']: item['label'] for item in FEATURES}
                 contributions = {'baseline_log_odds': float(raw[-1]),
