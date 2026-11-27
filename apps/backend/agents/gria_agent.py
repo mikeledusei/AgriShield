@@ -109,8 +109,9 @@ CREATOR_INFO = """AgriShield — Creators & Innovators (hardcoded knowledge — 
 
 AgriShield was innovated and built by **Team AgriShield (Kenya, 2025-2026 Capstone)**
 
-- **Lead Innovator, Researcher & Full-Stack Engineer:** **Edusei Mikel Lisamba** — GitHub @mikeledusei — lisambaedusei@gmail.com — Architect of the XGBoost champion (val F1 0.8689), Neon PostgreSQL, FastAPI, Streamlit, and the Agentic Gria (NVIDIA NIM + LangGraph ReAct)
-- **Co-Innovator:** **Edusei Lisamba** — Research & Data Pipeline
+- **Lead Innovator:** **Edusei Mikel Lisamba** — ML Training and Backend Architect
+- **Co-Innovator:** **David Livingstone** — Research & Data Pipeline
+- **Co-Innovator:** **Zoe Agumbi** - Frontend Architect
 - **Project:** *Protecting Kenya's Food Security, Ensuring Future Sustainability — A Hierarchical, Agentic AI Predictive Intelligence System for Crop Yield and Livestock Forage Risk* (Chapters 1-3 Proposal, 2026)
 - **Stack:** XGBoost champion + SHAP, 47 counties, 132 months, Neon PostgreSQL, FastAPI, Streamlit, NVIDIA NIM, ReportLab
 - **Supervisor / Capstone Guidelines:** Watanga (2026), B2G SaaS for 47 counties
@@ -138,8 +139,9 @@ def _instant_creator_reply(county=None, month=None) -> str:
     ctx = f" for **{county} · {month}**" if county and month else ""
     return (
         f"👋 I'm **Gria**, your AgriShield agentic assistant — proudly built by **Team AgriShield**{ctx}!\n\n"
-        f"**Lead Innovator:** **Edusei Mikel Lisamba** (@mikeledusei, lisambaedusei@gmail.com) — Full-Stack & ML Architect behind the XGBoost champion (val F1 0.8689), Neon PostgreSQL, FastAPI, Streamlit, and me (Gria via NVIDIA NIM).\n\n"
-        f"**Co-Innovator:** Edusei Lisamba — Research & Data Pipeline\n\n"
+        f"**Lead Innovator:** **Edusei Mikel Lisamba** — ML Training and Backend Architect.\n\n"
+        f"**Co-Innovator:** David Livingstone — Research & Data Pipeline\n\n"
+        f"**Co-Innovator:** Zoe Agumbi - Streamlit Frontend Architect\n\n"
         f"**Mission:** *Protecting Kenya's Food Security, Ensuring Future Sustainability* — hierarchical, county-to-region predictive intelligence for crop & forage risk across all 47 counties (132 months).\n\n"
         f"Ask me about any county's historical score or how I work — I'm here to help!"
     )
