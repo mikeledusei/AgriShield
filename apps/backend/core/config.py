@@ -59,7 +59,8 @@ class Settings(BaseSettings):
 
     NVIDIA_API_KEY: str = ""
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
-    NVIDIA_MODEL: str = "meta/llama-3.3-70b-instruct"
+    # llama-3.3-70b EOL 2026-08-26 (410 Gone) → replaced by Maverick/Scout/Nemotron family
+    NVIDIA_MODEL: str = "meta/llama-3.1-405b-instruct"
     LLM_TIMEOUT_SECONDS: int = 60
     AI_RATE_LIMIT_PER_MINUTE: int = 0
 
