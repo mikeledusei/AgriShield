@@ -3,7 +3,7 @@
     "bytes": 249830,
     "file": "era5land_precipitation_2015_2025_raw.csv",
     "note": "POWER PRECTOTCORR \u2192 mm/month via days-in-month; 0 failed; shim for 00b compatibility",
-    "retrieved": "2026-11-27T07:35:04Z",
+    "retrieved": "2026-11-27T09:54:00Z",
     "sha256": "88be7ebed0b6ce9c4bec7373758513c5357d10a1da4c2a872770efa30a2c49c9",
     "source": "NASA POWER monthly point API (PRECTOTCORR)"
   },
@@ -11,7 +11,7 @@
     "bytes": 343031,
     "file": "era5land_soil_moisture_runoff_2015_2025_raw.csv",
     "note": "soil wetness 0-1 via POWER; 0 counties failed; runoff NA (not in POWER)",
-    "retrieved": "2026-11-27T07:35:04Z",
+    "retrieved": "2026-11-27T09:53:54Z",
     "sha256": "b69852dd30da77106389c6d37201db37e913a1fb258a03fbc81eeac46c20bad1",
     "source": "NASA POWER monthly point API (GWETROOT,GWETPROF,QV2M)"
   },
@@ -43,7 +43,7 @@
     "bytes": 2354,
     "file": "knbs_2019_census_agriculture_households_raw.csv",
     "note": "county agricultural households",
-    "retrieved": "2026-11-27T07:35:05Z",
+    "retrieved": "2026-11-27T09:54:07Z",
     "sha256": "1dca3a05a6c6ab5997923fc72c7d4516d8e589ff748c4e32ae169f34e8a21239",
     "source": "KNBS 2019 Census (manual acquisition)"
   },
@@ -51,7 +51,7 @@
     "bytes": 282029,
     "file": "modis_era5_climate_vegetation_monthly_2015_2025_raw.csv",
     "note": "47 counties x 132 months, reanalysis",
-    "retrieved": "2026-11-27T07:35:04Z",
+    "retrieved": "2026-11-27T09:53:49Z",
     "sha256": "29cbc768b58fd976925b3bf1b2a32c999a9f70d4fb8753c1e88480e556d89ddc",
     "source": "NASA POWER monthly point API"
   }

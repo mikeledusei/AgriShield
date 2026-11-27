@@ -1,12 +1,12 @@
-# EDA - 13,771 rows, 47 counties, 2002-07 to 2026-11
-Panel: master_cleaned_2015_2025.csv - 13,771 rows.
+# EDA - 6,204 rows, 47 counties, 2015-01 to 2025-12
+Panel: master_cleaned_2015_2025.csv - 6,204 rows.
 These are descriptive stats only. ML target is synthesized low-NDVI.
 ---
 # Coverage: months per county
 
 ![Coverage: months per county](figures/01_coverage_by_county.png)
 
-Each bar is one county; dashed line is the median (293 months). All 47 bars reach it, so the panel is balanced: 13,771 rows = 47 x 293. If a bar was short, lags in the ML code would be wrong.
+Each bar is one county; dashed line is the median (132 months). All 47 bars reach it, so the panel is balanced: 6,204 rows = 47 x 132. If a bar was short, lags in the ML code would be wrong.
 
 ---
 
@@ -22,7 +22,7 @@ Rain peaks in long rains (Mar-May) and short rains (Oct-Dec). NDVI follows with 
 
 ![Annual NDVI and rainfall](figures/03_annual_ndvi_rainfall.png)
 
-NDVI range 0.503 to 0.614. National mean is flat; most change is at county level, not national.
+NDVI range 0.524 to 0.614. National mean is flat; most change is at county level, not national.
 
 ---
 
@@ -30,7 +30,7 @@ NDVI range 0.503 to 0.614. National mean is flat; most change is at county level
 
 ![Counties ranked by NDVI](figures/04_county_ndvi_ranking.png)
 
-Spread 0.266 (Marsabit) to 0.746 (Bomet). Arid north (Turkana, Marsabit) low, highlands high. Model uses county-relative threshold.
+Spread 0.271 (Marsabit) to 0.757 (Bomet). Arid north (Turkana, Marsabit) low, highlands high. Model uses county-relative threshold.
 
 ---
 
@@ -46,4 +46,4 @@ NDVI avg 0.56. Rainfall is right-skewed (tail to 887 mm).
 
 ![Correlation matrix](figures/06_correlation_matrix.png)
 
-NDVI vs soil r=0.71, vs rain r=0.53. Soil has many NaNs early, so soil correlation is weak.
+NDVI vs soil r=0.71, vs rain r=0.52. Soil has many NaNs early, so soil correlation is weak.
