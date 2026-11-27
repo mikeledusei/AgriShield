@@ -23,9 +23,13 @@ def _normalise_url(raw: str) -> str:
     url = url.replace("+asyncpg", "").replace("+psycopg_async", "")
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+    # SQLAlchemy 2.x defaults to psycopg (v3) for postgresql://, but we ship
+    # psycopg2-binary. Force psycopg2 so `postgresql://` from Neon works.
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg2://" + url[len("postgresql://"):]
     # Neon requires TLS. The dashboard URL already contains sslmode=require and
     # channel_binding=require; inject only if the caller pasted a bare host URL.
-    if url.startswith("postgresql://") and "sslmode" not in url:
+    if "sslmode" not in url:
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}sslmode=require"
     return url
