@@ -11,6 +11,15 @@ from core.supabase_client import get_supabase
 from fastapi import Header, HTTPException
 from services import logging_service
 
+#: Errors that genuinely mean "this credential is not valid".
+#: Everything else (a TypeError from an SDK change, a bug in our own code) must surface as
+#: a 500 with a traceback, not as a 401 that sends operators hunting for a token problem.
+CREDENTIAL_ERRORS: tuple[type[BaseException], ...] = (
+    ValueError,          # malformed/undecodable JWT
+    KeyError,            # missing claim the SDK validates by key
+    PermissionError,     # raised by some SDK versions for an expired token
+)
+
 PUBLIC_IDENTITY = {
     "id": "public",
     "email": "public@agrishield.ke",
@@ -50,10 +59,19 @@ def get_current_user(authorization: str | None = Header(default=None)) -> dict:
 
     try:
         response = client.auth.get_user(token)
-    except Exception:
+    except CREDENTIAL_ERRORS:
         # Token text is never logged: it is a credential.
         logging_service.warning("Bearer token verification failed.")
         raise _unauthorized("Invalid or expired token.") from None
+    except Exception:
+        # A network failure or an SDK/library bug is an availability problem, not a bad
+        # credential. Log it with the traceback and answer 503 so the client is not told
+        # to re-authenticate against a broken deployment.
+        logging_service.exception("Bearer token verification errored unexpectedly.")
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication could not be completed on this deployment.",
+        ) from None
 
     user = getattr(response, "user", None)
     if user is None:

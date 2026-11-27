@@ -1,7 +1,8 @@
 """Gria AI chat and evidence analysis."""
 from agents import gria_agent
+from core import rate_limit
 from core.auth import get_current_user
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from schemas.manual_prediction import ManualPredictionRequest
 from schemas.pydantic_models import GriaChatRequest, GriaChatResponse
@@ -12,10 +13,24 @@ from services.prediction_service import get_engine
 router = APIRouter(prefix="/gria", tags=["gria"])
 
 
+def enforce_ai_quota(request: Request, user: dict = Depends(get_current_user)) -> dict:
+    """Bound the paid, slow AI routes. Identity is the key, not the address, so callers
+    behind one NAT do not share a budget once authenticated."""
+    caller = user.get("id") or (request.client.host if request.client else "unknown")
+    retry_after = rate_limit.check(f"gria:{caller}")
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many AI requests. Wait a moment and try again.",
+            headers={"Retry-After": str(int(retry_after))},
+        )
+    return user
+
+
 @router.post("/chat", response_model=GriaChatResponse)
 def chat_with_gria(
     request: GriaChatRequest,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(enforce_ai_quota),
 ):
     engine = get_engine()
     if engine.model is None:
@@ -65,7 +80,7 @@ class AnalyzeRequest(BaseModel):
 
 
 @router.post('/analyze')
-def analyze(request: AnalyzeRequest, user: dict = Depends(get_current_user)):
+def analyze(request: AnalyzeRequest, user: dict = Depends(enforce_ai_quota)):
     if request.inputs is not None:
         evidence = manual_evidence(request.inputs, request.expected_model_sha256, request.expected_probability)
     else:

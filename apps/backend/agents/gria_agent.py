@@ -21,6 +21,9 @@ if (
             api_key=settings.NVIDIA_API_KEY,
             temperature=0.2,
             max_tokens=4096,
+            # Bound the provider call: an unbounded high-reasoning request holds a
+            # threadpool worker and can starve unrelated endpoints.
+            timeout=settings.LLM_TIMEOUT_SECONDS,
             model_kwargs={"reasoning_effort": "high"},
         )
     except Exception as e:

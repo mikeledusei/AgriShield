@@ -26,5 +26,8 @@ headless = true
 maxUploadSize = 10
 
 [client]
-showErrorDetails = "stacktrace"
+# Never render tracebacks to end users: the dashboard is public, and a stack trace
+# discloses internal paths and library versions. Operators read the server log instead
+# (every backend response carries X-Request-ID for correlation).
+showErrorDetails = "none"
 toolbarMode = "minimal"

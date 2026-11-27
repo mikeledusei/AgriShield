@@ -15,7 +15,11 @@
 pandas==3.1.1
 numpy==2.4.6
 joblib==1.6.0
-scikit-learn==1.9.1
+# Must match apps/backend/requirements.txt exactly: CI installs every component's
+# requirements into one interpreter, and two pins of the same package make the whole
+# install unsatisfiable. 1.9.0 is also the version the champion artifact was fitted with
+# (see _sklearn_version in the joblib metadata), so drift here risks unpickling errors.
+scikit-learn==1.9.0
 
 # Excel source tables (data_pipeline/data/external/knbs_candidate/*.xlsx)
 openpyxl==3.1.5
