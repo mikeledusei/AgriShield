@@ -40,8 +40,7 @@ credentials.json
 # `**` also matches the directories themselves, and git will not descend into an excluded
 # directory to look for a re-included file. The directories are therefore re-included
 # first, and the file allowlist below decides what actually gets tracked.
-data_pipeline/data/**
-!data_pipeline/data/**/
+
 *.tsv
 *.parquet
 *.feather
@@ -52,23 +51,7 @@ data_pipeline/data/**
 *.db
 
 # --- Tracked inputs (small, needed at runtime or read by the tests) ---
-!data_pipeline/data/kenya_county_crosswalk.csv
-!data_pipeline/data/external/knbs_candidate/maize_outcomes_clean.csv
-!data_pipeline/data/external/knbs_candidate/maize_2012_2020_mirror.xlsx
-!data_pipeline/data/external/knbs_candidate/README.md
-!data_pipeline/data/external/SOURCES.md
-!data_pipeline/data/processed/train_matrix.csv
-!data_pipeline/data/processed/test_matrix.csv
-!data_pipeline/data/processed/X_test.csv
-!data_pipeline/data/processed/y_test.csv
-!data_pipeline/data/processed/county_ndvi_stats.csv
-!data_pipeline/data/processed/NDVI_FINAL.csv
-!data_pipeline/data/processed/Weather_FINAL.csv
-!data_pipeline/data/processed/Demographic_Crop_Activity_FINAL.csv
-!data_pipeline/data/processed/ml_base_2015_2025.csv
-# The joined panel 01_data_cleaning.ipynb writes and 02_eda.ipynb reads. Tracked so a
-# clone can run the EDA and its tests without first re-running acquisition + cleaning.
-!data_pipeline/data/processed/master_cleaned_2015_2025.csv
+
 # Deliberately not tracked: byte-identical duplicate of apps/frontend/assets/kenya_counties.geojson
 # and read by no script. The frontend copy is the tracked one.
 
