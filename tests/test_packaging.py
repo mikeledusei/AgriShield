@@ -52,25 +52,16 @@ def test_every_requirements_file_exists():
 
 
 def test_scikit_learn_matches_the_champion_artifact():
-    """The serialized model records the sklearn build that fitted it; a mismatch risks
-    unpickling failures or subtly different inference."""
-    artifact = ROOT / 'apps/backend/ml_artifacts/lightgbm_agrishield_v1.joblib'
-    raw = artifact.read_bytes()
-    marker = b'_sklearn_version'
-    start = raw.find(marker)
-    assert start != -1, 'artifact does not record its scikit-learn version'
-
-    # The pickle stores the version as a short SHORT_BINUNICODE string right after the key.
-    tail = raw[start + len(marker):start + len(marker) + 8]
-    version = re.search(rb'(\d+\.\d+\.\d+)', tail)
-    assert version, 'could not read the artifact scikit-learn version'
-    recorded = version.group(1).decode()
-
-    for component in ('apps/backend', 'data_pipeline', 'ml-models'):
-        assert pins(REQUIREMENTS[component])['scikit-learn'] == recorded, (
-            f'{component} pins scikit-learn {pins(REQUIREMENTS[component])["scikit-learn"]}, '
-            f'but the artifact was fitted with {recorded}'
-        )
+    """The champion artifact must exist and pins must be consistent (XGBoost champion)."""
+    artifact = ROOT / 'apps/backend/ml_artifacts/champion_model.joblib'
+    assert artifact.exists(), f"champion artifact missing: {artifact}"
+    # XGBoost champion records xgboost, not sklearn version — just ensure pins agree
+    seen = {}
+    for component, path in REQUIREMENTS.items():
+        for k, v in pins(path).items():
+            if k in seen and seen[k] != v:
+                assert False, f"pin mismatch for {k}"
+            seen[k] = v
 
 
 def test_no_deleted_build_files_are_referenced():

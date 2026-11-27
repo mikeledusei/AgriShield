@@ -1,9 +1,8 @@
 """Readiness checks that prove the app can actually serve a request.
 
 Configuration alone is not evidence: the model is exercised with one row, the
-artifact digest is compared with the recorded hash, and the database is asked for
-the tables the app writes to. A dependency that is merely configured is reported
-as such and never counted as healthy.
+artifact digest is compared with the recorded hash, and the database (Neon
+PostgreSQL) is asked for the tables the app writes to.
 """
 from dataclasses import dataclass, field
 
@@ -48,7 +47,6 @@ def check_model(services: dict[str, str], problems: list[str]) -> None:
         problems.append("the loaded model does not match the recorded artifact hash")
         return
 
-    # Prove the model can score a complete row rather than trusting feature_cols.
     missing = sorted(set(engine_.feature_cols) - set(TRAINING_RANGES) - {"month_sin", "month_cos"})
     if missing:
         services["ml_engine"] = f"missing training ranges: {', '.join(missing)}"
@@ -77,8 +75,8 @@ def check_model(services: dict[str, str], problems: list[str]) -> None:
 
 def check_database(services: dict[str, str], problems: list[str]) -> None:
     if engine is None:
-        services["database"] = "not configured"
-        problems.append("DATABASE_URL is not configured")
+        services["database"] = "not configured (Neon DATABASE_URL missing)"
+        problems.append("DATABASE_URL is not configured — set Neon pooled URL")
         return
     try:
         with engine.connect() as connection:
@@ -86,22 +84,20 @@ def check_database(services: dict[str, str], problems: list[str]) -> None:
             existing = set(inspect(connection).get_table_names())
     except Exception:
         services["database"] = "unreachable"
-        problems.append("the database is unreachable")
+        problems.append("Neon database is unreachable — check DATABASE_URL and network")
         return
     missing = [table for table in REQUIRED_TABLES if table not in existing]
     if missing:
         services["database"] = "missing tables: " + ", ".join(missing)
         problems.append("database migrations have not been applied (run alembic upgrade head)")
         return
-    services["database"] = "connected"
+    services["database"] = "connected (Neon)"
 
 
 def check_configuration(services: dict[str, str], problems: list[str]) -> None:
-    services["supabase"] = "configured (not checked)" if settings.supabase_configured else "not configured"
+    services["database_provider"] = "Neon PostgreSQL"
     services["redis"] = "configured (not checked)" if settings.REDIS_URL else "not configured"
-    if settings.is_production and not settings.supabase_configured:
-        problems.append("production requires Supabase identity configuration")
-    services["auth_mode"] = "public (anonymous)" if settings.PUBLIC_MODE else "bearer token required"
+    services["auth_mode"] = "public (anonymous) — no Supabase"
 
 
 def build_health_report() -> HealthReport:

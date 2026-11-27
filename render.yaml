@@ -1,65 +1,43 @@
 # Render Blueprint — AgriShield Backend (Neon PostgreSQL)
 # Docs: https://render.com/docs/blueprint-spec
-# Deploys ONLY the FastAPI backend. The Streamlit dashboard is deployed separately (e.g. Vercel/Streamlit Cloud).
+# Deploys ONLY the FastAPI backend. Streamlit dashboard is separate (Vercel/Streamlit Cloud).
 # Every key with `sync: false` MUST be set manually in Render Dashboard → Environment.
-# See apps/backend/.env.example for the Neon pooled DATABASE_URL format and docs/DEPLOYMENT.md for the release sequence.
 
 services:
   - type: web
     name: agrishield-api
     runtime: python
-    region: frankfurt          # pick closest to your Neon region (e.g. eu-central-1 → frankfurt); Render default is oregon
+    region: frankfurt
     plan: free
     branch: main
     rootDir: .
-    # Render's Python runtime injects $PORT; build must succeed without DATABASE_URL (install only).
     buildCommand: pip install --upgrade pip && pip install -r apps/backend/requirements.txt
-    # Schema is applied once per deploy BEFORE the new code takes traffic.
-    # Must NOT run inside startCommand — rolling deploys would race on the same migrations.
     preDeployCommand: cd apps/backend && alembic upgrade head && python seed_counties.py
     startCommand: cd apps/backend && uvicorn main:app --host 0.0.0.0 --port $PORT
-    # Readiness probe: returns 503 until model, DB and migrations are healthy. Blocks a bad deploy.
     healthCheckPath: /api/v1/health/ready
-    autoDeploy: false          # set true if you want every push to main to auto-deploy
+    autoDeploy: false
     numInstances: 1
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.9           # must match apps/backend/requirements.txt pin (scikit-learn 1.9.0 built on 3.12)
-
+        value: 3.12.9
       - key: APP_ENV
         value: production
       - key: DEBUG
         value: "False"
       - key: LOG_LEVEL
         value: INFO
-
-      # Public prototype is on locally; production must be locked down. core/config.py enforces this.
       - key: PUBLIC_MODE
-        value: "False"
-
+        value: "True"
       - key: NVIDIA_MODEL
         value: meta/llama-3.3-70b-instruct
-
       # --- Must be set in Render Dashboard (sync: false) ---
-      # CORS_ORIGINS: comma-separated dashboard origin(s), e.g. https://agrishield.vercel.app
-      # Never "*" with credentials. Empty fails production validation.
       - key: CORS_ORIGINS
         sync: false
-      # Neon pooled connection string: Neon Console → Connect → Pooled → copy.
-      # Example: postgresql://neondb_owner:npg_xxx@ep-xxx-pooler.aws.neon.tech/neondb?sslmode=require&channel_binding=require
-      # The backend injects sslmode=require if missing.
       - key: DATABASE_URL
-        sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: NVIDIA_API_KEY
         sync: false
-
-      # --- Generated once on first deploy, then reused ---
+      # --- Generated once on first deploy ---
       - key: SECRET_KEY
         generateValue: true
       - key: API_KEY

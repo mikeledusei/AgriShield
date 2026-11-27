@@ -1,7 +1,8 @@
 """Application settings.
 
 Defaults are development-safe and fail closed: ``APP_ENV=production`` refuses to
-start unless identity, database and transport security are configured.
+start unless database and transport security are configured. Auth is intentionally
+public — the database is Neon PostgreSQL only.
 """
 import logging
 from functools import lru_cache
@@ -37,23 +38,16 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "dev-secret-key-change-in-production"
     API_KEY: str = "dev-api-key-change-in-production"
 
-    # Anonymous access is convenient locally and unacceptable in production.
-    # ``validate_production_safety`` enforces that.
+    # No auth — all endpoints are public. Kept for backwards-compat; always True.
     PUBLIC_MODE: bool = True
 
-    # Empty means "use the local SQLite file". Production must set this to the Neon
-    # pooled connection string so records are not silently written to an ephemeral
-    # container filesystem. See apps/backend/.env.example for the Neon URL format.
+    # Neon PostgreSQL — the only database. Empty = local SQLite fallback (development only).
+    # Production must set the Neon pooled connection string. See apps/backend/.env.example.
     DATABASE_URL: str = ""
     DB_ECHO: bool = False
     DB_CONNECT_TIMEOUT: int = 10
     DB_POOL_SIZE: int = 5
     DB_POOL_RECYCLE: int = 280
-
-    SUPABASE_URL: str = ""
-    SUPABASE_ANON_KEY: str = ""
-    SUPABASE_SERVICE_ROLE_KEY: str = ""
-    SUPABASE_BUCKET_NAME: str = "agrishield-uploads"
 
     REDIS_URL: str = "redis://localhost:6379/0"
     CACHE_TTL: int = 300
@@ -65,21 +59,12 @@ class Settings(BaseSettings):
 
     NVIDIA_API_KEY: str = ""
     NVIDIA_MODEL: str = "meta/llama-3.3-70b-instruct"
-    # A high-reasoning model can take tens of seconds. Without a bound, one slow call
-    # holds a limited threadpool worker and starves unrelated endpoints, so the request
-    # is abandoned and the caller gets the labelled deterministic summary instead.
     LLM_TIMEOUT_SECONDS: int = 60
-
-    # Requests per minute allowed against the AI endpoints (Gria chat/analyze), keyed by
-    # identity (or client address in PUBLIC_MODE). 0 disables the limiter, which is the
-    # local/test default; production sets it explicitly. These endpoints are the only
-    # ones that make a paid outbound call and can score all 47 counties per request.
     AI_RATE_LIMIT_PER_MINUTE: int = 0
 
     # Champion is selected on 2022-2023 validation F1 (XGBoost 0.8689 beats LightGBM 0.8588).
     # 2024-2025 is not an independent holdout — LightGBM's 0.5769 > 0.5389 there does not re-pick the champion.
     MODEL_PATH: Path = BACKEND_DIR / "ml_artifacts" / "champion_model.joblib"
-    # Loaded artifacts must match the hash recorded with the training ranges.
     REQUIRE_MODEL_HASH: bool = True
 
     # --- derived / validated values -------------------------------------------------
@@ -113,14 +98,6 @@ class Settings(BaseSettings):
     def log_level(self) -> int:
         return logging.getLevelName(self.LOG_LEVEL.strip().upper()) if self.LOG_LEVEL.strip() else logging.INFO
 
-    @property
-    def supabase_configured(self) -> bool:
-        return bool(
-            self.SUPABASE_URL.strip()
-            and self.SUPABASE_SERVICE_ROLE_KEY.strip()
-            and not self.SUPABASE_URL.startswith("https://your-project")
-        )
-
     @model_validator(mode="after")
     def validate_production_safety(self) -> "Settings":
         """Refuse to start in production with prototype defaults.
@@ -132,15 +109,6 @@ class Settings(BaseSettings):
             return self
 
         problems: list[str] = []
-        if self.PUBLIC_MODE:
-            problems.append(
-                "PUBLIC_MODE=True exposes every endpoint anonymously; set PUBLIC_MODE=False."
-            )
-        elif not self.supabase_configured:
-            problems.append(
-                "PUBLIC_MODE=False requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY "
-                "so bearer tokens can be verified."
-            )
         if not self.DATABASE_URL.strip():
             problems.append(
                 "DATABASE_URL is required in production (Neon PostgreSQL pooled URL); the local SQLite file is not durable."

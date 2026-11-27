@@ -11,7 +11,6 @@ from routers import (
     gria,
     health,
     history,
-    legacy,
     live,
     manual_predictions,
     outcomes,
@@ -23,13 +22,8 @@ from services import logging_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logging_service.info("Initializing AgriShield API (env=%s, public_mode=%s)",
-                         settings.APP_ENV, settings.PUBLIC_MODE)
-    if settings.PUBLIC_MODE:
-        logging_service.warning(
-            "PUBLIC_MODE is on: every endpoint is anonymous. "
-            "This is a prototype setting and must be off in production."
-        )
+    logging_service.info("Initializing AgriShield API (env=%s, model=%s)",
+                         settings.APP_ENV, settings.MODEL_PATH.name)
     if settings.DATABASE_URL:
         try:
             seed_counties()
@@ -96,8 +90,6 @@ app.include_router(gria.router, prefix=settings.API_V1_PREFIX)
 app.include_router(documents.router, prefix=settings.API_V1_PREFIX)
 app.include_router(snapshot_reports.router, prefix=settings.API_V1_PREFIX)
 app.include_router(history.router, prefix=settings.API_V1_PREFIX)
-# Registered last and path-specific: it must never shadow a live route.
-app.include_router(legacy.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.get("/", include_in_schema=False)
