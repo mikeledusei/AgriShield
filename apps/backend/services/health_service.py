@@ -106,7 +106,7 @@ def build_health_report() -> HealthReport:
     check_database(report.services, report.problems)
     check_configuration(report.services, report.problems)
 
-    from agents.gria_agent import agent_executor
+    from agents.gria_agent import active_model, agent_executor
 
-    report.services["gria_ai"] = "configured" if agent_executor is not None else "summary mode"
+    report.services["gria_ai"] = f"configured ({active_model})" if agent_executor is not None else "summary mode"
     return report
