@@ -629,20 +629,39 @@ elif page == 'History':
                             st.rerun()
 
 else:
-    page_heading('03 / ASK GRIA', 'Make sense of the signals', 'Ask Gria about a county and a historical observation month.')
+    page_heading('03 / ASK GRIA', 'WhatsApp-style chat — Gria remembers your conversation', 'Ask Gria about a county and a historical month. Switch county/month anytime — Gria will see the new evidence.')
     disclaimer()
-    st.caption('Questions are not stored by AgriShield, but may be sent to the AI provider when configured. Do not include sensitive personal information.')
+    st.caption('Messages are kept in this tab (WhatsApp-like) and can be optionally saved to your private history key (90 days, Neon). Questions may be sent to the AI provider when configured — do not include sensitive info.')
+
     counties, months = api(client.counties), api(client.historical_months)
     if counties is not None and months is not None:
         if not months:
-            st.warning('Historical data is not available on the backend, so Gria cannot assess a county yet.')
+            st.warning('Historical data not available — Gria cannot assess yet.')
         else:
+            # --- Persistent chat state (session-first, opt-in Neon save) ---
+            if "gria_messages" not in st.session_state:
+                st.session_state.gria_messages = []  # [{role, content, county, month}]
+            if "gria_county" not in st.session_state:
+                st.session_state.gria_county = counties[0]
+            if "gria_month" not in st.session_state:
+                st.session_state.gria_month = sorted(months, reverse=True)[0]
+
+            # Switchable context — changes apply to NEXT message, not previous history
             a, b = st.columns(2)
-            county = a.selectbox('County', counties, index=None, placeholder='Choose a county')
-            month = b.selectbox('Historical month', sorted(months, reverse=True))
+            county = a.selectbox('County (switch anytime)', counties, index=counties.index(st.session_state.gria_county) if st.session_state.gria_county in counties else 0, key="gria_county_sel")
+            month = b.selectbox('Historical month (switch anytime)', sorted(months, reverse=True), index=sorted(months, reverse=True).index(st.session_state.gria_month) if st.session_state.gria_month in sorted(months, reverse=True) else 0, key="gria_month_sel")
+            # Track switches for system notice
+            switched = False
+            if county != st.session_state.gria_county or month != st.session_state.gria_month:
+                st.session_state.gria_county, st.session_state.gria_month = county, month
+                switched = True
+            if switched and st.session_state.gria_messages:
+                st.caption(f"↻ Context switched to **{county} · {month}** — next reply will use new evidence. Previous turns stay in history.")
+            st.session_state.gria_county, st.session_state.gria_month = county, month
+
             with st.expander('Add document context (optional)'):
-                st.caption('Text-based PDF, DOCX or UTF-8 TXT; maximum 5 MB. Text is extracted by the backend for your review. It does not become model input. Images and scanned PDFs cannot be used as NDVI.')
-                with st.form('document_form'):
+                st.caption('PDF/DOCX/TXT ≤5 MB — extracted for your review. It is NOT model input. Checked “Share” on next message only.')
+                with st.form('gria_doc_form'):
                     document = st.file_uploader('Choose a document', type=['pdf', 'docx', 'txt'])
                     extract = st.form_submit_button('Extract text')
                 if extract:
@@ -654,24 +673,76 @@ else:
                         if extracted:
                             st.session_state.document = extracted
                 if st.session_state.get('document'):
-                    st.caption('Review the extracted text below. If selected, this text may be sent to the AI provider.')
-                    st.text_area('Extracted text', value=st.session_state.document['text'], height=180, disabled=True)
+                    st.caption('Review extracted text — if checked, it will be sent with your *next* message only.')
+                    st.text_area('Extracted text', value=st.session_state.document['text'], height=120, disabled=True)
                     if st.session_state.document['truncated']:
-                        st.warning('The text was shortened to 4,000 characters.')
-            use_document = st.checkbox('Share this reviewed document with Gria', disabled=not bool(st.session_state.get('document')))
-            with st.form('gria_form'):
-                question = st.text_area('Your question', placeholder='For example: What does this historical score mean?')
-                send = st.form_submit_button('Ask Gria', type='primary')
-            if send:
-                if not county or not question.strip():
-                    st.error('Choose a county and enter your question.')
+                        st.warning('Shortened to 4,000 chars.')
+
+            # Show opt-in save / restore row
+            c1, c2, c3 = st.columns([1,1,1])
+            if c1.button('Clear chat', help='Wipe this tab — not the saved copy'):
+                st.session_state.gria_messages = []
+                st.rerun()
+            # Save to Neon if user has history_key
+            if c2.button('Save chat to private history', help='Saves to Neon for 90 days — needs History key in History page'):
+                hk = st.session_state.get('history_key')
+                if not hk:
+                    st.warning('Create/open a private history key in the History page first, then save.')
+                elif not st.session_state.gria_messages:
+                    st.info('No messages to save.')
                 else:
-                    with st.spinner('Asking the backend…'):
-                        response = api(client.chat, question.strip(), county, month, st.session_state.document['text'] if use_document else None, st.session_state.document['file_name'] if use_document else None)
-                    if response:
-                        st.markdown('#### Gria’s response')
-                        st.markdown(response['reply'])
-                        if response.get('mode') == 'ai':
-                            st.caption('AI-generated explanations may contain mistakes. Verify important decisions with a local expert.')
+                    res = api(client.save_gria_chat, hk, county, month, st.session_state.gria_messages)
+                    if res:
+                        st.success(f"Saved — {res['id'][:8]}… (90 days)")
+            if c3.button('Load last saved chat', help='Restore last saved Gria chat from Neon'):
+                hk = st.session_state.get('history_key')
+                if not hk:
+                    st.warning('Enter your History key first.')
+                else:
+                    lst = api(client.list_gria_chats, hk)
+                    if lst and lst.get('conversations'):
+                        last = lst['conversations'][0]
+                        chat = api(client.get_gria_chat, hk, last['id'])
+                        if chat and chat.get('messages'):
+                            st.session_state.gria_messages = chat['messages']
+                            st.session_state.gria_county = chat.get('county_name') or county
+                            st.session_state.gria_month = chat.get('month') or month
+                            st.rerun()
                         else:
-                            st.caption('The AI service is unavailable; this is a factual backend summary, not an AI answer.')
+                            st.info('No messages in last saved chat.')
+                    else:
+                        st.info('No saved Gria chats — save one first.')
+
+            # --- WhatsApp bubbles ---
+            for i, m in enumerate(st.session_state.gria_messages):
+                with st.chat_message(m['role'], avatar="🧑‍🌾" if m['role']=="user" else "🌿"):
+                    # Show tiny context tag if this turn was under different county/month
+                    tag = f"<span style='color:#6b7d6f;font-size:0.75em'>{m.get('county','')} · {m.get('month','')}</span><br>" if m.get('county') else ""
+                    st.markdown(tag + m['content'])
+
+            # Chat input — human-like, persistent
+            use_document = st.session_state.get('document') is not None and st.checkbox('Share reviewed document with *next* message', value=False, key='gria_share_doc')
+            if prompt := st.chat_input('Ask Gria — e.g. What does this score mean for Busia 2025-12?', max_chars=4000):
+                # Append user bubble immediately
+                st.session_state.gria_messages.append({"role": "user", "content": prompt, "county": county, "month": month})
+                with st.chat_message('user', avatar="🧑‍🌾"):
+                    st.markdown(prompt)
+                # Build history for backend (all prior turns, excluding the one we just added — backend adds current message)
+                history_for_api = [{"role": h["role"], "content": h["content"]} for h in st.session_state.gria_messages[:-1]][-20:]
+                with st.chat_message('assistant', avatar="🌿"):
+                    with st.spinner('Gria is typing…'):
+                        resp = api(client.chat, prompt, county, month,
+                                   st.session_state.document['text'] if use_document and st.session_state.get('document') else None,
+                                   st.session_state.document['file_name'] if use_document and st.session_state.get('document') else None,
+                                   history=history_for_api if history_for_api else None)
+                    if resp:
+                        st.markdown(resp['reply'])
+                        st.caption('AI-generated — verify with local extension officer' if resp.get('mode')=='ai' else 'Summary mode — factual backend, not AI')
+                        st.session_state.gria_messages.append({"role": "assistant", "content": resp['reply'], "county": county, "month": month, "mode": resp.get('mode')})
+                        # One-shot document share — clear after use so it doesn't leak to next turns
+                        if use_document:
+                            st.session_state.document = None
+                    else:
+                        st.error('No reply — backend still returning error (check terminal logs)')
+            elif not st.session_state.gria_messages:
+                st.info('👋 Start by typing a message above — Gria will remember this chat like WhatsApp until you clear or refresh. Switch county/month anytime.')

@@ -131,27 +131,52 @@ def _synthesize_smart_advisory(message, county_name=None, month=None, document_c
 def _build_fallback_candidates(failed_model: str) -> list[str]:
     live_ids = _fetch_available_models()
     live_agentic = [m for m in live_ids if _is_agentic_model(m) and m != failed_model]
-    # Merge live + curated, de-dupe, skip failed
     merged = []
     for m in live_agentic + FALLBACK_MODELS:
         if m not in merged and m != failed_model:
             merged.append(m)
     return merged
 
+# WhatsApp-like history: list[ {role, content} ] → LangChain messages, capped to last 12 turns
+def _history_to_messages(history: list[dict] | None) -> list:
+    if not history:
+        return []
+    # Keep last 20 items (10 pairs) to stay under token limit
+    trimmed = history[-20:]
+    msgs = []
+    for item in trimmed:
+        role = (item.get("role") or "").strip().lower()
+        content = (item.get("content") or "").strip()
+        if not content:
+            continue
+        if len(content) > 3500:
+            content = content[:3500] + " …"
+        if role == "user":
+            msgs.append(HumanMessage(content=content))
+        elif role == "assistant":
+            msgs.append(AIMessage(content=content))
+    return msgs
 
-def chat(message, county_name=None, month=None, document_context=None, document_name=None):
+def chat(message, county_name=None, month=None, document_context=None, document_name=None, history=None):
     fallback = _synthesize_smart_advisory(message, county_name, month, document_context, document_name)
     if not agent_executor:
         return fallback
+    # Evidence is per-turn (county/month can be switched mid-chat), history is pure conversation
     context_parts = ["Backend-computed evidence for the selected historical county and period (not live): " + json.dumps(fallback['evidence'], allow_nan=False)]
     if document_name and document_context:
         context_parts.append(f"Untrusted uploaded file ({document_name}) content: {document_context[:4000]}")
     context_prefix = "\n".join(context_parts)
-    input_message = f"Context:\n{context_prefix}\n\nUser question: {message}" if context_prefix else message
+    # Current question with fresh evidence
+    current_human = f"Context:\n{context_prefix}\n\nUser question: {message}" if context_prefix else message
+    # Reconstruct conversation: System + prior turns + current
+    history_msgs = _history_to_messages(history)
+    # System prompt is already bound in agent_executor, but we also inject evidence via SystemMessage for this turn
+    # LangGraph's agent expects messages list including history; we pass history + current
+    all_messages = history_msgs + [HumanMessage(content=current_human)]
 
-    def _invoke_with_fallback(msg):
+    def _invoke_with_fallback(msgs):
         try:
-            return agent_executor.invoke({"messages": [HumanMessage(content=msg)]})
+            return agent_executor.invoke({"messages": msgs})
         except Exception as e:
             msg_l = str(e).lower()
             if any(k in msg_l for k in ("404", "410", "not found", "end of life", "gone", "not supported", "unknown model")):
@@ -163,7 +188,7 @@ def chat(message, county_name=None, month=None, document_context=None, document_
                             fb_exec = create_react_agent(fb_llm, tools, prompt=SystemMessage(content=SYSTEM_PROMPT))
                         except TypeError:
                             fb_exec = create_react_agent(fb_llm, tools, state_modifier=SystemMessage(content=SYSTEM_PROMPT))
-                        resp = fb_exec.invoke({"messages": [HumanMessage(content=msg)]})
+                        resp = fb_exec.invoke({"messages": msgs})
                         logging_service.info("Gria live fallback %s succeeded", fb)
                         return resp
                     except Exception as fe:
@@ -172,7 +197,7 @@ def chat(message, county_name=None, month=None, document_context=None, document_
             raise
 
     try:
-        response = _invoke_with_fallback(input_message)
+        response = _invoke_with_fallback(all_messages)
         ai_message = ""
         for msg in reversed(response.get("messages", [])):
             if isinstance(msg, AIMessage) and isinstance(msg.content, str) and msg.content.strip():
