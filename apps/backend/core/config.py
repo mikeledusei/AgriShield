@@ -76,7 +76,9 @@ class Settings(BaseSettings):
     # ones that make a paid outbound call and can score all 47 counties per request.
     AI_RATE_LIMIT_PER_MINUTE: int = 0
 
-    MODEL_PATH: Path = BACKEND_DIR / "ml_artifacts" / "lightgbm_agrishield_v1.joblib"
+    # Champion is selected on 2022-2023 validation F1 (XGBoost 0.8689 beats LightGBM 0.8588).
+    # 2024-2025 is not an independent holdout — LightGBM's 0.5769 > 0.5389 there does not re-pick the champion.
+    MODEL_PATH: Path = BACKEND_DIR / "ml_artifacts" / "champion_model.joblib"
     # Loaded artifacts must match the hash recorded with the training ranges.
     REQUIRE_MODEL_HASH: bool = True
 

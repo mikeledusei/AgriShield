@@ -1,9 +1,10 @@
 """
 AgriShield Prediction & TreeSHAP Explainability Engine (2015-2025 pipeline).
 
-Scorer: LightGBM champion (ml_artifacts/lightgbm_agrishield_v1.joblib), loaded only
-after its SHA-256 matches the hash recorded with the training ranges.
-Explainability: exact TreeSHAP contributions (pred_contrib=True).
+Scorer: XGBoost champion (ml_artifacts/champion_model.joblib → xgboost_agrishield_v1.joblib),
+selected on 2022-2023 validation F1 (0.8689). LightGBM artifact remains in ml_artifacts
+for reproducibility but is not served. Loaded only after its SHA-256 matches the hash
+recorded with the training ranges. Explainability: exact TreeSHAP contributions.
 
 There is no fallback scorer. If the artifact is missing, unreadable or fails its
 hash check, every scoring path raises and the API reports the model as
@@ -153,7 +154,12 @@ class PredictionEngine:
                     self.model = joblib.load(model_path)
                     self.model_sha256 = digest
                     cls_name = type(self.model).__name__.lower()
-                    self.model_name = 'lightgbm_v1' if 'lgbm' in cls_name or 'lightgbm' in cls_name else type(self.model).__name__
+                    if 'lgbm' in cls_name or 'lightgbm' in cls_name:
+                        self.model_name = 'lightgbm_v1'
+                    elif 'xgb' in cls_name or 'xgboost' in cls_name:
+                        self.model_name = 'xgboost_v1'
+                    else:
+                        self.model_name = type(self.model).__name__
                     logger.info('Model loaded from %s (%s).', model_path.name, self.model_name)
             except Exception as exc:
                 logger.error('Could not load configured model %s: %s', model_path.name, exc)
@@ -320,7 +326,7 @@ class PredictionEngine:
         return items, round(base_val, 4)
 
     def get_global_importance(self) -> list[dict[str, Any]]:
-        """Return global feature importances across all 16 features of the LightGBM Champion model."""
+        """Return global feature importances across all 16 features of the champion model."""
         if self.model is None or not hasattr(self.model, "feature_importances_"):
             return []
         raw_imp = np.asarray(self.model.feature_importances_, dtype=float)
