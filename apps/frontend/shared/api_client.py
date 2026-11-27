@@ -233,8 +233,20 @@ class AgriShieldClient:
     def extract_document(self, name, content, mime):
         return self._request("POST", "/documents/extract", files={"file": (name, content, mime)})
 
-    def chat(self, message, county, month, document_context=None, document_name=None):
-        return self._request("POST", "/gria/chat", json={"message": message, "county_name": county, "month": month, "document_context": document_context, "document_name": document_name})
+    def chat(self, message, county, month, document_context=None, document_name=None, history=None):
+        payload = {"message": message, "county_name": county, "month": month, "document_context": document_context, "document_name": document_name}
+        if history:
+            payload["history"] = history
+        return self._request("POST", "/gria/chat", json=payload)
+
+    def save_gria_chat(self, key, county, month, messages):
+        return self._request("POST", "/gria/conversations", headers={"X-History-Key": key}, json={"county_name": county, "month": month, "messages": messages})
+
+    def list_gria_chats(self, key):
+        return self._request("GET", "/gria/conversations", headers={"X-History-Key": key})
+
+    def get_gria_chat(self, key, cid):
+        return self._request("GET", f"/gria/conversations/{cid}", headers={"X-History-Key": key})
 
 
 def get_client():
