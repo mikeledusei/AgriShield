@@ -28,7 +28,7 @@ def health_check():
             services=report.services,
             model_loaded=report.services.get('ml_engine') not in (None, 'unavailable'),
             model_name=report.services.get('ml_engine', 'unavailable'),
-            gria_available=report.services.get('gria_ai') == 'configured',
+            gria_available=str(report.services.get('gria_ai','')).startswith('configured'),
             database_connected=report.services.get('database') == 'connected (Neon)',
             problems=report.problems,
         )
@@ -49,7 +49,7 @@ def readiness(response: Response):
         services=report.services,
         model_loaded=report.services.get('ml_engine') not in (None, 'unavailable'),
         model_name=report.services.get('ml_engine', 'unavailable'),
-        gria_available=report.services.get('gria_ai') == 'configured',
+        gria_available=str(report.services.get('gria_ai','')).startswith('configured'),
         database_connected=report.services.get('database') == 'connected',
         problems=report.problems,
     )
