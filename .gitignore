@@ -63,7 +63,7 @@ credentials.json
 # 3. MACHINE LEARNING MODELS (CRITICAL - Large binaries)
 # ============================================================
 # All saved model binaries from ml-models/models/
-ml-models/models/
+# ml-models/models/
 
 # Common model file extensions anywhere in the project
 *.pkl
@@ -255,7 +255,7 @@ docs/presentation/*.pptx
 # Research model binaries are release assets, not tracked files. The champion artifact
 # and its scaler are the exception: the API loads them at runtime and the image copies
 # them, so a clean clone must contain them.
-*.joblib
+#*.joblib
 !apps/backend/ml_artifacts/*.joblib
 
 # Local databases and generated reports
