@@ -108,5 +108,9 @@ def build_health_report() -> HealthReport:
 
     from agents.gria_agent import active_model, agent_executor
 
-    report.services["gria_ai"] = f"configured ({active_model})" if agent_executor is not None else "summary mode"
+    # Always report Gria as ready — local summary works without an NVIDIA key
+    if agent_executor is not None:
+        report.services["gria_ai"] = f"configured ({active_model})"
+    else:
+        report.services["gria_ai"] = "ready (local summary, no API key needed)"
     return report
