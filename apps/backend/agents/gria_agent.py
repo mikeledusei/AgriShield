@@ -83,14 +83,14 @@ if (
     if live_ids:
         logging_service.info("Gria catalog: %d models, %d agentic (e.g. %s)", len(live_ids), len(live_agentic), live_agentic[:5])
 
-    # Prioritize live agentic, de-dupe
+    # Honor user's explicit NVIDIA_MODEL first — never override it with catalog auto-pick (that caused mistral fallback in your logs)
+    # Only use catalog to fill fallbacks after the primary
     candidates = []
     for m in [settings.NVIDIA_MODEL] + live_agentic + FALLBACK_MODELS:
         if m not in candidates:
             candidates.append(m)
-    # Probe in order: create client succeeds ≠ model alive — real 410 only on invoke, so we init first candidate and let chat() retry live.
-    # But we can at least init the first that is in live_ids to avoid known-dead 410.
-    ranked = [c for c in candidates if c in live_ids] + [c for c in candidates if c not in live_ids] if live_ids else candidates
+    # Use explicit order: user's choice first, then live, then fallbacks — no re-ranking that buries the chosen model
+    ranked = candidates
     for cand in ranked:
         try:
             llm = _make_llm(cand)
