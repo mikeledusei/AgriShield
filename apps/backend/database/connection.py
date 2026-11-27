@@ -1,8 +1,9 @@
 """Database engine and session factory.
 
-Production uses PostgreSQL/Neon with bounded pooling and timeouts; tests and local
+Production uses Neon PostgreSQL with bounded pooling and timeouts; tests and local
 development fall back to SQLite. Schema is owned by Alembic — nothing here calls
-``create_all``.
+``create_all``. Paste the Neon pooled DATABASE_URL from the Neon Console; the
+engine normalises postgres:// and injects sslmode=require for Neon automatically.
 """
 from collections.abc import Iterator
 
@@ -16,12 +17,14 @@ Base = declarative_base()
 
 
 def _normalise_url(raw: str) -> str:
-    """Accept the URL spellings hosted providers hand out."""
+    """Accept the URL spellings hosted providers (Neon) hand out."""
     url = raw.strip()
     # A synchronous engine cannot use the async driver.
     url = url.replace("+asyncpg", "").replace("+psycopg_async", "")
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
+    # Neon requires TLS. The dashboard URL already contains sslmode=require and
+    # channel_binding=require; inject only if the caller pasted a bare host URL.
     if url.startswith("postgresql://") and "sslmode" not in url:
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}sslmode=require"
