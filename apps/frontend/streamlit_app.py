@@ -366,35 +366,7 @@ elif page == 'New assessment':
                     if result:
                         remember_assessment(result)
                         st.session_state.report_key = None
-                        # Gria AI analysis and branded PDF report for the assessment
-                        st.divider()
-                        st.markdown('#### 🤖 Gria AI Analysis & Branded Report')
-                        st.caption('The champion model predicts the score based on your assessment info. Gria AI can analyse this output and generate a branded PDF report.')
-                        x, y = st.columns(2)
-                        if x.button('Ask Gria to analyse this assessment'):
-                            with st.spinner('Gria is analysing the model output…'):
-                                try:
-                                    analyzed = api(client.analyze_assessment, payload, result)
-                                    st.session_state.assessment_analysis = analyzed['analysis']
-                                    st.success('Analysis complete.')
-                                except Exception as e:
-                                    st.error(f'Gria analysis failed: {e}')
-                        if y.button('Prepare branded PDF report'):
-                            with st.spinner('Generating branded report…'):
-                                try:
-                                    pdf, snapshot = api(client.report, payload, result, include_gria=True)
-                                    st.session_state.assessment_pdf = pdf
-                                    st.session_state.assessment_snapshot = snapshot
-                                    st.session_state.assessment_pdf_key = (county, date.strftime('%Y-%m'))
-                                    st.success('Report generated successfully.')
-                                except Exception as e:
-                                    st.error(f'Report generation failed: {e}')
-                        analysis = st.session_state.get('assessment_analysis')
-                        if analysis:
-                            st.markdown('#### Gria’s analysis of the assessment')
-                            st.markdown(analysis)
-                        if st.session_state.get('assessment_pdf_key') == (county, date.strftime('%Y-%m')):
-                            st.download_button('Download assessment PDF', st.session_state.assessment_pdf, file_name='agrishield-assessment-report.pdf', mime='application/pdf')
+                        st.rerun()
         with raw_tab:
             st.write('Have the original measurements? Enter them below and the backend will calculate the indicators using the same formulas as model training.')
             st.caption('For the normal rainfall, use this county and calendar month’s 2015–2023 average. For normal NDVI and its variation, use the county’s 2015–2023 mean and sample standard deviation. The same training sources and definitions are needed for comparable results.')

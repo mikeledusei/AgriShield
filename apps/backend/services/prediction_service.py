@@ -288,8 +288,18 @@ class PredictionEngine:
         base_val = 0.0
 
         try:
-            if hasattr(self.model, "booster_"):
-                contrib = self.model.booster_.predict(x, pred_contrib=True)[0]
+            booster = None
+            if hasattr(self.model, "get_booster"):
+                try:
+                    booster = self.model.get_booster()
+                except Exception:
+                    booster = None
+            elif hasattr(self.model, "booster_"):
+                booster = self.model.booster_
+            if booster is not None:
+                import xgboost as xgb
+                dmat = xgb.DMatrix(x, enable_categorical=False)
+                contrib = booster.predict(dmat, pred_contribs=True)[0]
                 shap_vals = np.asarray(contrib[:-1], dtype=float)
                 base_val = float(contrib[-1])
             else:
