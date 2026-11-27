@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     # ``validate_production_safety`` enforces that.
     PUBLIC_MODE: bool = True
 
-    # Empty means "use the local SQLite file". Production must set this explicitly
-    # so records are not silently written to an ephemeral container filesystem.
+    # Empty means "use the local SQLite file". Production must set this to the Neon
+    # pooled connection string so records are not silently written to an ephemeral
+    # container filesystem. See apps/backend/.env.example for the Neon URL format.
     DATABASE_URL: str = ""
     DB_ECHO: bool = False
     DB_CONNECT_TIMEOUT: int = 10
@@ -140,7 +141,7 @@ class Settings(BaseSettings):
             )
         if not self.DATABASE_URL.strip():
             problems.append(
-                "DATABASE_URL is required in production; the local SQLite file is not durable."
+                "DATABASE_URL is required in production (Neon PostgreSQL pooled URL); the local SQLite file is not durable."
             )
         for name in ("SECRET_KEY", "API_KEY"):
             value = getattr(self, name)
