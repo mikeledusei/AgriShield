@@ -16,9 +16,8 @@ def test_settings():
     assert settings.APP_NAME == "AgriShield API"
     assert settings.API_V1_PREFIX == "/api/v1"
     assert settings.PUBLIC_MODE is True
-    assert settings.MODEL_PATH.name == "lightgbm_agrishield_v1.joblib"
+    assert settings.MODEL_PATH.name == "champion_model.joblib"
     assert settings.log_level == 20  # logging.INFO
-    # Empty DATABASE_URL means "local sqlite", which is never used in production.
     assert settings.resolved_database_url.startswith("sqlite:///")
 
 
@@ -37,13 +36,13 @@ def test_band_scale_is_single_sourced():
     assert set(BAND_ORDER) == {"Lower", "Moderate", "Elevated", "High"}
 
 
-def test_ml_artifacts_and_lightgbm_champion():
+def test_ml_artifacts_and_xgboost_champion():
     """The champion model, its hash and the 16-feature contract are all present."""
     from services.prediction_service import get_engine
 
     engine = get_engine()
     assert engine.model is not None
-    assert engine.model_name == "lightgbm_v1"
+    assert engine.model_name == "xgboost_v1"
     assert len(engine.feature_cols) == 16
     assert engine.model_sha256 == engine._expected_model_sha256()
     assert len(engine.ndvi_stats) == 47
@@ -89,8 +88,6 @@ def test_every_historical_row_satisfies_the_request_contract(example):
             ManualPredictionRequest.model_validate(payload)
         except Exception:
             rejected += 1
-    # A handful of held-out 2024 flood months legitimately sit above the training
-    # distribution; they must stay a small, explainable minority.
     assert rejected <= len(frame) * 0.01, f"{rejected} of {len(frame)} rows rejected"
     assert ManualPredictionRequest.model_validate(example)
 
@@ -124,18 +121,16 @@ def test_model_imports():
     assert Upload.__tablename__ == "uploads"
 
 
-def test_retired_endpoints_are_explicit_and_gone(api):
-    """Retired routes answer 410, and a bare catch-all no longer shadows /predictions."""
-    retired_posts = [
-        "/predictions/crop-yield", "/predictions/forecast", "/predictions/scenario",
-        "/upload/analyze", "/reports/create", "/storage/upload",
+def test_legacy_endpoints_are_removed(api):
+    """Stubs were deleted — legacy paths now 404, live routes still work."""
+    retired = [
+        "/predictions/crop-yield",
+        "/predictions/forecast",
+        "/upload/analyze",
+        "/reports/create",
     ]
-    for path in retired_posts:
-        assert api.post("/api/v1" + path, json={}).status_code == 410, path
-    for path in ["/predictions/batch", "/predictions/explain", "/predictions/months", "/reports/1/pdf"]:
-        assert api.get("/api/v1" + path).status_code == 410, path
-
-    # Live routes under the same prefix must still resolve.
+    for path in retired:
+        assert api.post("/api/v1" + path, json={}).status_code == 404, path
     assert api.get("/api/v1/predictions/counties").status_code == 200
     assert api.get("/api/v1/predictions/input-schema").status_code == 200
     assert api.get("/api/v1/health").status_code == 200
@@ -150,7 +145,7 @@ def test_liveness_and_readiness_are_distinct(api):
     body = ready.json()
     assert ready.status_code == 200, body["problems"]
     assert body["model_loaded"] is True
-    assert body["model_name"] == "lightgbm_v1"
+    assert body["model_name"] == "xgboost_v1"
     assert body["database_connected"] is True
     assert body["problems"] == []
     assert body["services"]["model_artifact_sha256"]
@@ -182,7 +177,6 @@ def test_readiness_reports_missing_migrations(monkeypatch):
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"PUBLIC_MODE": True},
         {"DATABASE_URL": ""},
         {"SECRET_KEY": "dev-secret-key-change-in-production"},
         {"API_KEY": "dev-api-key-change-in-production"},
@@ -196,9 +190,6 @@ def test_production_refuses_unsafe_configuration(overrides):
 
     safe = {
         "APP_ENV": "production",
-        "PUBLIC_MODE": False,
-        "SUPABASE_URL": "https://example.supabase.co",
-        "SUPABASE_SERVICE_ROLE_KEY": "service-role",
         "DATABASE_URL": "postgresql://user:pass@host/db",
         "SECRET_KEY": "a-real-secret",
         "API_KEY": "a-real-key",
@@ -214,15 +205,12 @@ def test_production_accepts_a_complete_configuration():
 
     settings = Settings(
         APP_ENV="production",
-        PUBLIC_MODE=False,
-        SUPABASE_URL="https://example.supabase.co",
-        SUPABASE_SERVICE_ROLE_KEY="service-role",
         DATABASE_URL="postgresql://user:pass@host/db",
         SECRET_KEY="a-real-secret",
         API_KEY="a-real-key",
         CORS_ORIGINS="https://dashboard.example.com",
     )
-    assert settings.is_production and not settings.PUBLIC_MODE
+    assert settings.is_production
 
 
 def test_live_weather_backs_off_after_a_provider_failure(api, monkeypatch):
@@ -329,7 +317,6 @@ def test_outcomes_survive_a_malformed_row(tmp_path, monkeypatch):
     monkeypatch.setattr(outcomes, "DATA", frame)
     monkeypatch.setattr(outcomes, "_cache", None)
     rows = outcomes._rows()
-    # The unknown county is dropped; the flagged Nakuru row is kept with no values.
     assert {row["county"] for row in rows} == {"Nakuru"}
     assert len(rows) == 2
     usable = [row for row in rows if row["quality_flag"] == "ok"]
@@ -338,12 +325,7 @@ def test_outcomes_survive_a_malformed_row(tmp_path, monkeypatch):
 
 
 def test_summary_does_not_claim_a_forecast():
-    """The plain-language summary must describe the proxy, not promise a prediction.
-
-    The champion model classifies whether NDVI is below the county's 25th percentile in
-    the same month; it has no future target and no crop/fodder outcome. A summary that
-    says it "predicts drought and forage risk" would overstate it to the user.
-    """
+    """The plain-language summary must describe the proxy, not promise a prediction."""
     from services.prediction_service import PredictionEngine
 
     summary = PredictionEngine.build_plain_explanation(

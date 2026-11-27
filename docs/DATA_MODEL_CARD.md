@@ -2,7 +2,7 @@
 
 ## Purpose and target
 
-The deployed artifact is `apps/backend/ml_artifacts/lightgbm_agrishield_v1.joblib` with the feature ordering in `feature_columns.json`. The original notebooks create a binary label when a county-month's NDVI falls below that county's 2015–2023 25th percentile. This is a **synthesized proxy for low vegetation greenness**, not a measurement of crop loss, pasture biomass, animal feed demand, or food insecurity. Crop and livestock selections do not represent two independently validated outcome models.
+The deployed artifact is `apps/backend/ml_artifacts/champion_model.joblib` (XGBoost, validation F1 0.8689) with the feature ordering in `feature_columns.json`. The original notebooks create a binary label when a county-month's NDVI falls below that county's 2015–2023 25th percentile. This is a **synthesized proxy for low vegetation greenness**, not a measurement of crop loss, pasture biomass, animal feed demand, or food insecurity. Crop and livestock selections do not represent two independently validated outcome models.
 
 The classifier's output has not been calibrated as a real-world probability. The four displayed bands are descriptive interface groupings, not validated alert thresholds. SHAP contributions explain this model's output in log-odds, not causal effects or percentage-point changes. Ground-truth data, independent evaluation, threshold selection, expert review and stakeholder testing are needed before operational use.
 
