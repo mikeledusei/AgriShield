@@ -42,7 +42,22 @@ def _load_env_file() -> None:
             continue
         key, _, value = entry.partition("=")
         key = key.strip()
-        value = value.strip().strip('"').strip("'")
+        raw_value = value.strip()
+        # Handle quoted values: "https://example.com # not a comment"
+        if raw_value.startswith('"') or raw_value.startswith("'"):
+            quote = raw_value[0]
+            end = raw_value.find(quote, 1)
+            if end != -1:
+                value = raw_value[1:end]
+            else:
+                value = raw_value.strip('"').strip("'")
+        else:
+            # Unquoted: strip inline " # comment" — e.g. "30               # seconds" → "30"
+            if " #" in raw_value or "\t#" in raw_value:
+                value = raw_value.split("#", 1)[0].strip()
+            else:
+                value = raw_value
+            value = value.strip('"').strip("'")
         if key and key not in os.environ:
             os.environ[key] = value
 
@@ -77,8 +92,14 @@ class AgriShieldClient:
     def __init__(self, base_url: str | None = None, token: str | None = None):
         self.base_url = _resolve_base_url(base_url)
         self.token = token or os.getenv("AGRISHIELD_API_TOKEN")
+        raw_timeout = (os.getenv("AGRISHIELD_API_TIMEOUT", "30") or "30").strip()
+        # allow "30 # seconds" comments that slipped through env
+        if "#" in raw_timeout:
+            raw_timeout = raw_timeout.split("#", 1)[0].strip() or "30"
+        if not raw_timeout:
+            raw_timeout = "30"
         try:
-            self.timeout = float(os.getenv("AGRISHIELD_API_TIMEOUT", "30"))
+            self.timeout = float(raw_timeout)
         except ValueError:
             raise ConfigurationError("AGRISHIELD_API_TIMEOUT must be a number of seconds.") from None
 
