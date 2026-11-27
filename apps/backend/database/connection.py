@@ -29,7 +29,8 @@ def _normalise_url(raw: str) -> str:
         url = "postgresql+psycopg2://" + url[len("postgresql://"):]
     # Neon requires TLS. The dashboard URL already contains sslmode=require and
     # channel_binding=require; inject only if the caller pasted a bare host URL.
-    if "sslmode" not in url:
+    # IMPORTANT: only for postgres, not sqlite — sqlite + ?sslmode=require causes SAWarning on Render.
+    if url.startswith("postgresql") and "sslmode" not in url:
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}sslmode=require"
     return url
