@@ -224,7 +224,8 @@ def chat(message, county_name=None, month=None, document_context=None, document_
             return agent_executor.invoke({"messages": msgs})
         except Exception as e:
             msg_l = str(e).lower()
-            if any(k in msg_l for k in ("404", "410", "not found", "end of life", "gone", "not supported", "unknown model")):
+            # also fallback on timeouts — your Render logs show ReadTimeout on mistral-large-4 (60s)
+            if any(k in msg_l for k in ("404", "410", "not found", "end of life", "gone", "not supported", "unknown model", "timeout", "timed out", "readtimeout")):
                 for fb in _build_fallback_candidates(active_model):
                     try:
                         logging_service.warning("Gria %s failed (%s), retrying with live fallback %s", active_model, type(e).__name__, fb)

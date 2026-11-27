@@ -59,9 +59,9 @@ class Settings(BaseSettings):
 
     NVIDIA_API_KEY: str = ""
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
-    # All 2024-era models (llama-3.3/3.1/mistral-large-2/nemotron 2026-11-15) are 410 Gone today → use active Mistral/Qwen generation
-    NVIDIA_MODEL: str = "mistralai/mistral-large-4-1t-a52b"
-    LLM_TIMEOUT_SECONDS: int = 90
+    # mistral-large-4 is timing out on Render (60s ReadTimeout in your logs) → use faster 12B nano that finishes in <15s
+    NVIDIA_MODEL: str = "nvidia/llama-3.1-nemotron-nano-8b-v1"
+    LLM_TIMEOUT_SECONDS: int = 30
     AI_RATE_LIMIT_PER_MINUTE: int = 0
 
     # Champion is selected on 2022-2023 validation F1 (XGBoost 0.8689 beats LightGBM 0.8588).
