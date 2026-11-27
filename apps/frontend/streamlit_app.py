@@ -713,21 +713,66 @@ else:
                     else:
                         st.info('No saved Gria chats — save one first.')
 
-            # --- WhatsApp bubbles ---
-            for i, m in enumerate(st.session_state.gria_messages):
-                with st.chat_message(m['role'], avatar="🧑‍🌾" if m['role']=="user" else "🌿"):
-                    # Show tiny context tag if this turn was under different county/month
-                    tag = f"<span style='color:#6b7d6f;font-size:0.75em'>{m.get('county','')} · {m.get('month','')}</span><br>" if m.get('county') else ""
-                    st.markdown(tag + m['content'])
+            # --- Beautiful WhatsApp-like bubbles (fixed HTML bug + premium styling) ---
+            # Inject premium chat CSS once
+            st.markdown("""
+            <style>
+            /* Chat container — WhatsApp web vibes */
+            [data-testid="stChatMessage"] {border-radius: 18px !important; padding: 14px 16px !important; box-shadow: 0 2px 12px rgba(23,62,44,0.07) !important; border: 1px solid rgba(23,62,44,0.06) !important; margin-bottom: 6px !important; max-width: 88%;}
+            [data-testid="stChatMessage"] div[data-testid="stMarkdownContainer"] p {margin: 0; line-height: 1.55;}
+            /* User bubble — warm green, right */
+            div[data-testid="stChatMessage"]:has(div[data-testid="chatAvatarIcon-user"]) {background: linear-gradient(135deg, #dcf8c6 0%, #c8f0b8 100%) !important; margin-left: auto !important; border-bottom-right-radius: 4px !important;}
+            /* Assistant bubble — clean white, left */
+            div[data-testid="stChatMessage"]:has(div[data-testid="chatAvatarIcon-assistant"]) {background: #ffffff !important; margin-right: auto !important; border-bottom-left-radius: 4px !important;}
+            .gria-meta {color: #6b7d6f; font-size: 0.72em; font-weight: 600; letter-spacing: 0.04em; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;}
+            .gria-meta .dot {width:7px; height:7px; border-radius:50%; background:#2b6842; display:inline-block; animation: pulse 2s infinite;}
+            @keyframes pulse {0%,100%{opacity:1} 50%{opacity:0.5}}
+            .gria-header {background: linear-gradient(135deg, #173e2c 0%, #2b6842 100%); border-radius: 16px; padding: 16px 18px; color: white; display:flex; align-items:center; gap:14px; margin-bottom:12px;}
+            .gria-header img {width:44px; height:44px; border-radius:50%; border:2px solid rgba(255,255,255,0.3);}
+            .gria-header h4 {margin:0; color:white; font-family: 'DM Serif Display', serif;}
+            .gria-chips {display:flex; gap:8px; flex-wrap:wrap; margin:10px 0;}
+            .gria-chip {background: white; border: 1px solid #d9e9d4; border-radius: 20px; padding: 6px 12px; font-size: 0.82em; color: #2b6842; cursor: pointer;}
+            </style>
+            """, unsafe_allow_html=True)
 
-            # Chat input — human-like, persistent
-            use_document = st.session_state.get('document') is not None and st.checkbox('Share reviewed document with *next* message', value=False, key='gria_share_doc')
-            if prompt := st.chat_input('Ask Gria — e.g. What does this score mean for Busia 2025-12?', max_chars=4000):
-                # Append user bubble immediately
+            # Gria premium header
+            st.markdown(f"""
+            <div class="gria-header">
+                <img src="https://api.dicebear.com/7.x/bottts/svg?seed=Gria&backgroundColor=b6e3f4" alt="Gria"/>
+                <div>
+                    <h4>🌿 Gria — AgriShield AI</h4>
+                    <div style="font-size:0.85em; opacity:0.9;">Online · remembers history · {county} · {month} · {len(st.session_state.gria_messages)} messages</div>
+                </div>
+                <div style="margin-left:auto; text-align:right; font-size:0.78em; opacity:0.85;">⚡ Mistral-large-4<br>90s timeout</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Quick chips — tap to ask
+            chip_cols = st.columns(4)
+            chips = ["Explain this score 🧠", "What should I do? 🌱", "Compare counties 📊", "Who built you? 👨‍💻"]
+            for idx, label in enumerate(chips):
+                if chip_cols[idx].button(label, key=f"gria_chip_{idx}", use_container_width=True):
+                    st.session_state.gria_messages.append({"role": "user", "content": label, "county": county, "month": month})
+                    st.rerun()
+
+            # Render history as bubbles with proper HTML
+            for m in st.session_state.gria_messages:
+                with st.chat_message(m['role'], avatar="🧑‍🌾" if m['role']=="user" else "🌿"):
+                    if m.get('county'):
+                        st.markdown(f"<div class='gria-meta'><span class='dot'></span>{m.get('county')} · {m.get('month')} · {m.get('mode','ai') if m['role']=='assistant' else 'you'}</div>", unsafe_allow_html=True)
+                    st.markdown(m['content'])
+
+            # One-shot document toggle above input
+            use_document = False
+            if st.session_state.get('document'):
+                use_document = st.checkbox('📎 Share reviewed document with next message (one-shot)', value=False, key='gria_share_doc')
+
+            # Premium chat input
+            if prompt := st.chat_input('Ask Gria — e.g. What does Busia 2025-12 score mean? Try "Who created AgriShield?"', max_chars=4000):
                 st.session_state.gria_messages.append({"role": "user", "content": prompt, "county": county, "month": month})
                 with st.chat_message('user', avatar="🧑‍🌾"):
+                    st.markdown(f"<div class='gria-meta'>{county} · {month} · you</div>", unsafe_allow_html=True)
                     st.markdown(prompt)
-                # Build history for backend (all prior turns, excluding the one we just added — backend adds current message)
                 history_for_api = [{"role": h["role"], "content": h["content"]} for h in st.session_state.gria_messages[:-1]][-20:]
                 with st.chat_message('assistant', avatar="🌿"):
                     with st.spinner('Gria is typing…'):
@@ -736,13 +781,14 @@ else:
                                    st.session_state.document['file_name'] if use_document and st.session_state.get('document') else None,
                                    history=history_for_api if history_for_api else None)
                     if resp:
+                        st.markdown(f"<div class='gria-meta'><span class='dot'></span>{county} · {month} · {resp.get('mode','ai')}</div>", unsafe_allow_html=True)
                         st.markdown(resp['reply'])
-                        st.caption('AI-generated — verify with local extension officer' if resp.get('mode')=='ai' else 'Summary mode — factual backend, not AI')
+                        st.caption('🤖 AI-generated — verify with local extension officer' if resp.get('mode')=='ai' else '📋 Summary mode — factual backend, not AI')
                         st.session_state.gria_messages.append({"role": "assistant", "content": resp['reply'], "county": county, "month": month, "mode": resp.get('mode')})
-                        # One-shot document share — clear after use so it doesn't leak to next turns
                         if use_document:
                             st.session_state.document = None
+                        st.rerun()
                     else:
-                        st.error('No reply — backend still returning error (check terminal logs)')
+                        st.error('No reply — check backend terminal for Gria catalog/mode')
             elif not st.session_state.gria_messages:
-                st.info('👋 Start by typing a message above — Gria will remember this chat like WhatsApp until you clear or refresh. Switch county/month anytime.')
+                st.info('👋 Hi! I’m **Gria**, built by **Edusei Mikel Lisamba & Team AgriShield**. Ask me about any county’s score, say "Who created AgriShield?", or tap a chip above. I remember our chat like WhatsApp — switch county/month anytime!')
