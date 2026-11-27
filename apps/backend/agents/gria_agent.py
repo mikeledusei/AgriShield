@@ -34,19 +34,25 @@ def _fetch_available_models() -> list[str]:
 
 def _is_agentic_model(mid: str) -> bool:
     m = mid.lower()
-    # Prefer tool-calling families that still support ReAct on NIM
-    agentic_keywords = ("llama", "maverick", "scout", "nemotron", "qwen3", "qwen", "mistral", "mixtral", "gemma", "deepseek", "nemo", "405b", "70b", "8b")
+    # NVIDIA gemma-3 family does NOT support ReAct tools on NIM (you saw 404 Function not found) — exclude them
+    if "gemma-3" in m:
+        return False
+    # cosmos, nemoguard are vision/safety classifiers, not agentic chat
+    if any(k in m for k in ("cosmos", "nemoguard", "topic-control", "guard")):
+        return False
+    # Prefer tool-calling families that support ReAct on NIM
+    agentic_keywords = ("llama", "maverick", "scout", "nemotron", "qwen3", "qwen", "mistral", "mixtral", "deepseek", "nemo", "405b", "70b", "8b", "large-4", "nemo")
     return any(k in m for k in agentic_keywords)
 
 # Curated fallbacks for when catalog fetch fails (offline/dev). Ordered by agentic quality.
+# NOTE: gemma-3-4b/12b are 404 for tools, cosmos/nemoguard are not chat — don't list them.
 FALLBACK_MODELS = [
-    "meta/llama-4-maverick-17b-128e-instruct",
-    "meta/llama-4-scout-17b-16e-instruct",
+    "mistralai/mistral-large-4-1t-a52b",
+    "mistralai/mistral-nemo",
     "qwen/qwen3-235b-a22b",
     "nvidia/llama-3.1-nemotron-nano-8b-v1",
-    "mistralai/mistral-nemo",
-    "google/gemma-3-27b-it",
-    "meta/llama-3.1-8b-instruct",
+    "meta/llama-4-scout-17b-16e-instruct",
+    "meta/llama-4-maverick-17b-128e-instruct",
 ]
 
 def _make_llm(model_name: str):
